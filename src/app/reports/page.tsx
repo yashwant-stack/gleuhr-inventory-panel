@@ -82,7 +82,7 @@ function ConsolidatedReport() {
           options={ordered.map((c) => ({ value: c.id, label: c.label, hint: `${c.kind} · report ${fmtDay(c.reportOn)}` }))}
         />
         <span className="text-[12.5px] text-muted">
-          Sent to the CBO on {fmtDay(cycle.reportOn)}
+          {cycle.reportOn > ds.today ? "Goes to the CBO on" : "Sent to the CBO on"} {fmtDay(cycle.reportOn)}
           {state === "upcoming" ? " · plans not requested yet, shows the system projection only" : ""}
         </span>
       </div>

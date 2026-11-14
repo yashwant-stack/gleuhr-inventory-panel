@@ -125,10 +125,11 @@ export default function AlertsPage() {
               <div className="ml-auto max-w-[340px] rounded-lg rounded-tr-none bg-[#dcf8c6] px-3 py-2 text-[13px] leading-relaxed text-[#111b21] shadow-sm">
                 <div className="font-semibold">Stock alert · {fmtDay(ds.today)}, 9:00 AM</div>
                 <div>🔴 Critical: {critical.length} products{first ? ` (${first.product.name} runs out in ${fmtDays(first.cover)} days)` : ""}</div>
-                <div>
-                  🟠 Low: {low.length} products · suggested order {fmtMoneyShort(orderValue)}
-                </div>
+                <div>🟠 Low: {low.length} products</div>
                 <div>🔵 Overstock: {over.length} products · {fmtMoneyShort(overValue)} excess</div>
+                <div>
+                  🛒 Order now: {fmtMoneyShort(orderValue)} at cost ({critical.length + low.length} products)
+                </div>
                 <div className="mt-1 text-[#027eb5] underline">View full list and approve indent</div>
                 <div className="mt-1 text-right text-[11px] text-[#667781]">09:00 ✓✓</div>
               </div>
@@ -192,24 +193,28 @@ export default function AlertsPage() {
               <thead>
                 <tr>
                   <th>Message</th>
-                  <th>When</th>
-                  <th>Next</th>
-                  <th>To</th>
-                  <th>CC</th>
+                  <th>When · next</th>
+                  <th>To · CC</th>
                   <th>Via</th>
                 </tr>
               </thead>
               <tbody>
                 {plan.map((p) => (
                   <tr key={p.name}>
-                    <td>
+                    <td style={{ minWidth: 190 }}>
                       <div className="font-medium">{p.name}</div>
-                      <div className="max-w-[230px] text-[11.5px] text-muted">{p.content}</div>
+                      <div className="text-[11.5px] text-muted">{p.content}</div>
                     </td>
-                    <td className="max-w-[160px] text-ink-2">{p.when}</td>
-                    <td className="whitespace-nowrap">{p.next.length === 10 ? (p.next === ds.today ? "Today" : `${fmtWeekday(p.next)} ${fmtDay(p.next)}`) : p.next}</td>
-                    <td className="max-w-[170px]">{p.to}</td>
-                    <td className="whitespace-nowrap text-ink-2">{p.cc}</td>
+                    <td style={{ minWidth: 170 }}>
+                      <div className="text-ink-2">{p.when}</div>
+                      <div className="text-[12px] font-medium">
+                        Next: {p.next.length === 10 ? (p.next === ds.today ? "today" : `${fmtWeekday(p.next)} ${fmtDay(p.next)}`) : p.next}
+                      </div>
+                    </td>
+                    <td style={{ minWidth: 170 }}>
+                      <div>{p.to}</div>
+                      {p.cc !== "—" ? <div className="text-[12px] text-ink-2">CC: {p.cc}</div> : null}
+                    </td>
                     <td className="whitespace-nowrap">{p.channel}</td>
                   </tr>
                 ))}
