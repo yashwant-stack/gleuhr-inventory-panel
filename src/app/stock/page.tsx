@@ -8,6 +8,7 @@ import { Button, Card, CardHeader, Empty, Note, PageHeader, Segmented, sortRows,
 import { allTransfers, productMatches, STATUS_ORDER } from "@/lib/data/engine";
 import { useDataset, useFilters, useMetrics } from "@/lib/data/hooks";
 import { downloadCsv } from "@/lib/csv";
+import { IS_PREVIEW, PREVIEW_NO_DOWNLOAD } from "@/lib/platform";
 import { fmtDay } from "@/lib/dates";
 import type { StockStatus } from "@/lib/domain/types";
 import { fmtDays, fmtInt, fmtMoneyShort, fmtRate } from "@/lib/format";
@@ -62,6 +63,8 @@ function StockHealth() {
         right={
           <Button
             icon={<Download size={14} />}
+            disabled={IS_PREVIEW}
+            disabledReason={PREVIEW_NO_DOWNLOAD}
             onClick={() =>
               downloadCsv(
                 `stock_${ds.today}.csv`,

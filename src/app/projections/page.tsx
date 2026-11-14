@@ -9,6 +9,7 @@ import { Button, Card, CardHeader, Note, PageHeader, Segmented, sortRows, SortTh
 import { CHANNEL_IDS, channelRates, productMatches, totalSeries, unitValue } from "@/lib/data/engine";
 import { useDataset, useFilters, useMetrics } from "@/lib/data/hooks";
 import { downloadCsv } from "@/lib/csv";
+import { IS_PREVIEW, PREVIEW_NO_DOWNLOAD } from "@/lib/platform";
 import { projection, trendFactor } from "@/lib/domain/formulas";
 import { PROJECTION_HORIZONS, type ChannelId } from "@/lib/domain/types";
 import { fmtInt, fmtMoneyShort, fmtRate } from "@/lib/format";
@@ -71,6 +72,8 @@ export default function ProjectionsPage() {
         right={
           <Button
             icon={<Download size={14} />}
+            disabled={IS_PREVIEW}
+            disabledReason={PREVIEW_NO_DOWNLOAD}
             onClick={() =>
               downloadCsv(
                 `projections_${ds.today}.csv`,

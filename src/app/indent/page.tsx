@@ -9,6 +9,7 @@ import { Button, Card, Empty, Note, PageHeader, Segmented, StatTile, StatusChip,
 import { productMatches, type ProductMetrics } from "@/lib/data/engine";
 import { useDataset, useFilters, useMetrics, useRole } from "@/lib/data/hooks";
 import { downloadCsv } from "@/lib/csv";
+import { IS_PREVIEW, PREVIEW_NO_DOWNLOAD } from "@/lib/platform";
 import { addDays, fmtDay } from "@/lib/dates";
 import { daysUntilOrder, daysWithNoStock, indentQuantity, stockStatus } from "@/lib/domain/formulas";
 import { COVER_OPTIONS, LEAD_TIME_OPTIONS } from "@/lib/domain/types";
@@ -108,7 +109,7 @@ export default function IndentPage() {
         sub="What to order now and how much. Order = daily rate × (lead time + cover days) + safety stock − current stock − stock on the way, rounded up to the pack size."
         right={
           <>
-            <Button icon={<Download size={14} />} onClick={exportList}>
+            <Button icon={<Download size={14} />} onClick={exportList} disabled={IS_PREVIEW} disabledReason={PREVIEW_NO_DOWNLOAD}>
               Export purchase list
             </Button>
             <Button disabled disabledReason="Creating purchase orders in Zoho comes in a later version; for now, export the list.">

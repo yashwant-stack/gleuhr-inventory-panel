@@ -8,6 +8,7 @@ import { Button, Card, CardHeader, ChannelSplitBar, Delta, Empty, PageHeader, Se
 import { CHANNEL_IDS, dailyTotals, previousRange, salesByProduct } from "@/lib/data/engine";
 import { useDataset, useFilters, useMetrics } from "@/lib/data/hooks";
 import { downloadCsv } from "@/lib/csv";
+import { IS_PREVIEW, PREVIEW_NO_DOWNLOAD } from "@/lib/platform";
 import { diffDays, fmtRange } from "@/lib/dates";
 import type { ChannelId } from "@/lib/domain/types";
 import { fmtInt, fmtMoney, fmtMoneyShort, fmtPct, fmtRate, pctChange } from "@/lib/format";
@@ -74,7 +75,7 @@ export default function SalesPage() {
   return (
     <div>
       <PageHeader title="Sales" sub="Product-wise sales for any date range, split by clinic, online team, Amazon, Flipkart and website. Click a product for its full detail." />
-      <FilterBar right={<Button icon={<Download size={14} />} onClick={exportCsv}>Export CSV</Button>} />
+      <FilterBar right={<Button icon={<Download size={14} />} onClick={exportCsv} disabled={IS_PREVIEW} disabledReason={PREVIEW_NO_DOWNLOAD}>Export CSV</Button>} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="Sales value" value={fmtMoneyShort(total)} sub={<><Delta pct={pctChange(total, prevTotal)} /> vs previous {days} days</>} />

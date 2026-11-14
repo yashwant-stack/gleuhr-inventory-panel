@@ -1,0 +1,12 @@
+/* claude.ai page host: keep the sticky top bar clear of a phone's top system bar. */
+header.sticky {
+  top: env(safe-area-inset-top, 0px);
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  height: env(safe-area-inset-top, 0px);
+  z-index: 35;
+  background: var(--color-bone);
+}

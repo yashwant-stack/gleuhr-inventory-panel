@@ -16,6 +16,7 @@ import { COVER_OPTIONS, type ChannelId } from "@/lib/domain/types";
 import { fmtInt, fmtMoneyShort, fmtPct } from "@/lib/format";
 import { WAREHOUSE_ID } from "@/lib/mock/catalog";
 import { CYCLES } from "@/lib/mock/plans";
+import { IS_PREVIEW, PREVIEW_NO_PRINT } from "@/lib/platform";
 import { PLAN_PARTS, roleById } from "@/lib/roles";
 import { usePanel } from "@/lib/state/store";
 
@@ -30,7 +31,7 @@ export default function ReportsPage() {
         sub="The consolidated projection report that goes to the CBO, and the report chain from overall sales down to current stock."
         right={
           <>
-            <Button icon={<Printer size={14} />} onClick={() => window.print()}>
+            <Button icon={<Printer size={14} />} onClick={() => window.print()} disabled={IS_PREVIEW} disabledReason={PREVIEW_NO_PRINT}>
               Download PDF
             </Button>
             <Button icon={<Mail size={14} />} disabled disabledReason="Emailing the report works once email is connected (backend stage).">
