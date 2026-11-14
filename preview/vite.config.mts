@@ -16,6 +16,7 @@ export default defineConfig({
     alias: [
       { find: /^next\/link$/, replacement: path.resolve(here, "shims/next-link.tsx") },
       { find: /^next\/navigation$/, replacement: path.resolve(here, "shims/next-navigation.ts") },
+      { find: /^@\/lib\/csv$/, replacement: path.resolve(here, "shims/csv.ts") },
       { find: /^@\//, replacement: `${path.resolve(projectRoot, "src")}/` },
     ],
   },
