@@ -1,0 +1,143 @@
+@import "tailwindcss";
+
+/* Gleuhr family tokens: bone canvas, coral chrome, Hanken Grotesk. */
+@theme {
+  --font-sans: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-bone: #f7f6f3;
+  --color-surface: #ffffff;
+  --color-sunken: #f1efea;
+  --color-ink: #1c1b19;
+  --color-ink-2: #52514e;
+  --color-muted: #7d7a72;
+  --color-line: #e6e3dc;
+  --color-line-strong: #d3cfc5;
+
+  --color-coral: #d75649;
+  --color-coral-dark: #b8443a;
+  --color-coral-soft: #fbecea;
+  --color-confirm: #1f7a4d;
+  --color-confirm-soft: #e5f3eb;
+
+  /* channel series — validated categorical order (slots 1–5) */
+  --color-ch-clinic: #2a78d6;
+  --color-ch-online: #eb6834;
+  --color-ch-amazon: #1baf7a;
+  --color-ch-flipkart: #eda100;
+  --color-ch-website: #e87ba4;
+
+  /* status — reserved, always shown with an icon + label */
+  --color-st-critical: #d03b3b;
+  --color-st-critical-soft: #fbe9e9;
+  --color-st-low: #b77600;
+  --color-st-low-soft: #fdf3dc;
+  --color-st-healthy: #1f7a4d;
+  --color-st-healthy-soft: #e5f3eb;
+  --color-st-over: #4b5f99;
+  --color-st-over-soft: #e9ecf6;
+  --color-st-none: #7d7a72;
+  --color-st-none-soft: #efede8;
+}
+
+html,
+body {
+  background: var(--color-bone);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dense data tables */
+.dtable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.dtable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-sunken);
+  color: var(--color-ink-2);
+  font-weight: 600;
+  font-size: 12px;
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--color-line);
+  white-space: nowrap;
+}
+.dtable td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--color-line);
+  vertical-align: middle;
+}
+.dtable tbody tr:hover td {
+  background: #faf9f6;
+}
+.dtable .num {
+  text-align: right;
+}
+.dtable tr.clickable {
+  cursor: pointer;
+}
+
+.scroll-thin::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 8px;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.anim-slide {
+  animation: slide-in 160ms ease-out;
+}
+
+@keyframes fade-up {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.anim-fade {
+  animation: fade-up 140ms ease-out;
+}
+
+/* Print: reports print cleanly (Download PDF uses the browser's print to PDF). */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  .print-full {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
