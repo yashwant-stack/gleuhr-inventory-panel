@@ -242,7 +242,7 @@ export function ProductDrawer() {
                 value={String(leadOverrides[p.id] ?? "vendor")}
                 onChange={(v) => {
                   setLeadOverride(p.id, v === "vendor" ? null : Number(v));
-                  toast("Lead time saved in this browser. It will save to the server once the backend is connected.");
+                  toast("Lead time saved in this browser only. Saving it for everyone comes with personal logins.");
                 }}
                 disabled={role.access !== "admin"}
                 disabledReason="Only an admin (CBO) can change lead times"

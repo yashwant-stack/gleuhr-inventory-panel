@@ -73,7 +73,7 @@ export default function IndentPage() {
     if (!items.length) return;
     approve(items, role.id);
     setSelected(new Set());
-    toast(`${items.length} order line${items.length > 1 ? "s" : ""} approved. Saved in this browser until the backend is connected.`);
+    toast(`${items.length} order line${items.length > 1 ? "s" : ""} approved. Saved in this browser only, until personal logins are added.`);
   };
 
   const exportList = () =>

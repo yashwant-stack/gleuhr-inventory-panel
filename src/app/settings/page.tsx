@@ -79,7 +79,7 @@ export default function SettingsPage() {
     store.saveSettings(f);
     store.saveRecipients(r);
     store.saveSchedule(s);
-    toast("Settings saved in this browser. Every page now uses them. They will save to the server once the backend is connected.");
+    toast("Settings saved in this browser only, and every page here now uses them. Saving them for everyone comes with personal logins.");
   };
   const reset = () => {
     store.resetSettings();

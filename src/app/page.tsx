@@ -61,7 +61,7 @@ export default function HomePage() {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatTile label={`Sales · ${fmtRange(f.from, f.to)}`} value={fmtMoneyShort(total)} sub={<><Delta pct={pctChange(total, prevTotal)} /> vs previous {days} days</>} />
-        <StatTile label="Units sold" value={fmtInt(units)} sub={<>{fmtInt(units / days)} a day · <Delta pct={pctChange(units, prevUnits)} /></>} />
+        <StatTile label="Units sold" value={fmtInt(units)} sub={<>{fmtRate(units / days)} a day · <Delta pct={pctChange(units, prevUnits)} /></>} />
         <StatTile href="/stock?status=urgent" tone="critical" label="Critical + Low products" value={critical.length + low.length} sub={`${critical.length} critical · ${low.length} low`} />
         <StatTile href="/stock?status=overstock" tone="over" label="Overstock products" value={over.length} sub={`${fmtMoneyShort(stuck)} stuck at cost`} />
         <StatTile href={role.access === "planner" ? undefined : "/indent"} label="Suggested order now" value={fmtMoneyShort(toOrder)} sub={`at cost, ${critical.length + low.length} products`} />

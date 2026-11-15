@@ -139,7 +139,7 @@ function sourceWeights(sources: Source[]): number[] {
 }
 
 export const SAMPLE_HEALTH: DataHealth = {
-  checkedAt: "2026-11-14T16:30:00+05:30",
+  checkedAt: "2026-11-15T12:00:00+05:30",
   unmappedClinics: [
     { clinicId: "10", name: "Delhi East", landsOn: "Mohali - Warehouse" },
     { clinicId: "46", name: "Pune", landsOn: "Mohali - Warehouse" },
@@ -165,6 +165,23 @@ export const SAMPLE_HEALTH: DataHealth = {
     { area: "Transfer orders", ok: false, note: "Not authorized (warehouse → clinic moves)" },
     { area: "Purchase orders", ok: false, note: "Not checked yet: stock on the way needs it" },
   ],
+  // Read-only check of the CRM database, 15 Nov 2026: 13 of the CRMs' 55 products have no Zoho item.
+  // Listed: the active ones and any sold in the last 90 days (Vitamin C Serum is neither).
+  leftOutProducts: [
+    ["Blemishes Pigmentation facial Treatment kit", 360, "2026-11-11"],
+    ["Age Lock Facial Treatment Kit", 47, "2026-10-19"],
+    ["Holistic Skin Plan 1 Month", 17, "2026-11-04"],
+    ["Purifying Acne Facial Treatment Kit", 12, "2026-10-17"],
+    ["Holistic Skin Plan 3 Month", 5, "2026-10-19"],
+    ["Hair Spa kit", 4, "2026-09-19"],
+    ["Holistic Skin Plan 6 Month", 3, "2026-11-06"],
+    ["Holistic Skin Plan 2 Month", 1, "2026-09-28"],
+    ["Holistic Skin Plan 4 Month", 1, "2026-09-28"],
+    ["Holistic Skin Plan 12 Month", 0, null],
+    ["Holistic Skin Plan 8 Month", 0, null],
+    ["Jet Black Magic Waterproof & Smudgeproof Mascara", 0, "2026-08-10"],
+  ].map(([name, units, last]) => ({ name: name as string, reason: "No Zoho item linked in the CRM", unitsSold90d: units as number, lastSale: last as string | null })),
+  zohoOnlyItems: null,
   lastSync: [
     { job: "Zoho stock", at: LAST_SYNCED_AT, ok: true, note: "Sample" },
     { job: "CRM sales", at: LAST_SYNCED_AT, ok: true, note: "Sample" },

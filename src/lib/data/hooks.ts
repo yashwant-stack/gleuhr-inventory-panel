@@ -2,6 +2,7 @@
 
 import { createContext, createElement, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { LoadScreen } from "../../components/LoadScreen";
 import { getDataset } from "../mock/dataset";
 import { CYCLES } from "../mock/plans";
 import { roleById, type PlanPart } from "../roles";
@@ -15,20 +16,23 @@ const LIVE = typeof process !== "undefined" && process.env.NEXT_PUBLIC_DATA_SOUR
 
 const DatasetContext = createContext<Dataset | null>(null);
 
-/** Loads the data once and shows loading / failure honestly; children only render with real data in hand. */
+/** Loads the data once and shows loading / failure / the access key form honestly; children only render with real data in hand. */
 export function DatasetProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<{ ds?: Dataset; error?: string }>(() => (LIVE ? {} : { ds: getDataset() }));
+  const [state, setState] = useState<{ ds?: Dataset; error?: string; locked?: boolean }>(() => (LIVE ? {} : { ds: getDataset() }));
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!LIVE) return;
     let alive = true;
     fetch("/api/dataset", { cache: "no-store" })
       .then(async (r) => {
-        if (!r.ok) throw new Error((await r.text().catch(() => "")) || `HTTP ${r.status}`);
-        return (await r.json()) as DatasetWire;
+        if (r.status === 401) return "locked" as const;
+        const body = (await r.json().catch(() => null)) as (DatasetWire & { error?: string }) | null;
+        if (!r.ok || !body) throw new Error(body?.error ?? `The server answered ${r.status}`);
+        return body;
       })
       .then((w) => {
         if (!alive) return;
+        if (w === "locked") return setState({ locked: true });
         const ds = decodeDataset(w);
         setPanelToday(ds.today);
         const st = usePanel.getState();
@@ -42,28 +46,14 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
   }, [attempt]);
 
   if (state.ds) return createElement(DatasetContext.Provider, { value: state.ds }, children);
-  return createElement(
-    "div",
-    { className: "flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center text-[13px]" },
-    state.error
-      ? [
-          createElement("div", { key: "t", className: "text-[15px] font-semibold text-ink" }, "Couldn’t load the panel’s data"),
-          createElement("div", { key: "m", className: "max-w-md text-ink-2" }, state.error.slice(0, 300)),
-          createElement(
-            "button",
-            {
-              key: "b",
-              className: "rounded-lg bg-coral px-3 py-1.5 font-medium text-white",
-              onClick: () => {
-                setState({});
-                setAttempt((a) => a + 1);
-              },
-            },
-            "Try again",
-          ),
-        ]
-      : createElement("div", { className: "text-muted" }, "Loading stock from Zoho and sales from the CRMs…"),
-  );
+  return createElement(LoadScreen, {
+    state: state.locked ? "locked" : state.error ? "error" : "loading",
+    message: state.error,
+    onRetry: () => {
+      setState({});
+      setAttempt((a) => a + 1);
+    },
+  });
 }
 
 export function useDataset(): Dataset {

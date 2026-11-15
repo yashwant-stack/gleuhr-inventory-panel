@@ -1,64 +1,121 @@
-# Backend plan: notes for the next stage
+# Backend: what is built, and how to switch it on
 
-Written at the end of the frontend stage (14 Nov 2026). Nothing here is built yet. These are the facts found in the two existing Gleuhr codebases that the backend must respect, plus the decisions still needed.
+Updated 15 Nov 2026 (backend stage 1). The frontend stage is unchanged; this stage adds the server side that feeds it real data.
 
-Sources read (read-only):
-- `aman-cf/gleuhr-clinic-crm`: `src/server/zoho/*` (client, token, stock, budget, reason) and `docs/lanes/aaryan/tasks-1nov/w-stock/REPORT.md`
-- `aman-cf/gleuhr-online`: `src/fixtures/seed-data.json` (catalogue, clinics)
+**In one line:** every 2 hours the panel copies **stock per location from Zoho** and **sales per channel from the CRM database** into its **own** database. The screens then read one data feed (`/api/dataset`), behind an access key. Nothing is ever written to Zoho or to the CRM database.
 
-**No call was made to Zoho during this stage.** The credentials shared in chat were not used or stored. Because they were shared in a chat, generate a new client secret and refresh token before go-live, and put them only in the hosting provider’s secret store.
+Until the switch-on steps in §2 are done, the panel runs on the built-in sample data, exactly as before.
 
-## 1 · Connecting to Zoho
+---
 
-- India data centre: API `https://www.zohoapis.in/inventory/v1/...`, OAuth `https://accounts.zoho.in/oauth/v2/token`.
-- Every call carries `organization_id` and `Authorization: Zoho-oauthtoken <access token>`.
-- Refresh-token flow: exchange the long-lived refresh token for a 1-hour access token, and cache it (re-mint a minute before expiry). Never mint a token per request. The clinic CRM’s `src/server/zoho/token.ts` is a good pattern to copy (copy and adapt, not share code).
-- The browser never calls Zoho; only the server does.
+## 1 · What is built
 
-## 2 · What the panel needs from Zoho
-
-| Data | Endpoint | Notes |
+| Piece | File | What it does |
 |---|---|---|
-| Locations (warehouse + 9 clinics) | `GET /locations` | Clinics are Zoho locations (the clinic CRM maps `clinics.zoho_location_id`). Mohali is a non-clinic warehouse location. |
-| Stock per location | `GET /items?location_id=…&per_page=200` | Per-row stock is `locations[].location_stock_on_hand` for that location, else `stock_on_hand`. Use **stock on hand**, not “available for sale”. About 250 SKUs means 2 pages per location. |
-| Clinic & online-team sales | `GET /inventoryadjustments` (by date) | The clinic and online CRMs push every sale to Zoho as an **inventory adjustment**, not an invoice. The `reason` text says what it was: `CRM sale`, `Online sale`, `Complimentary`, `Exchange in`/`out`, `Online RTO restock`, `Online cancellation restock`, `Online RTO — missing (written off)`, `Online RTO — damaged (written off)`, `Online pack reversed — …`. Sales = sale reasons minus their reversals. |
-| Amazon / Flipkart / Shopify sales | `GET /salesorders` or `/invoices` | Confirmed by the business to be in Zoho. **To verify at the first live read:** which field marks the channel (sales channel, customer or integration). |
-| Open purchase orders | `GET /purchaseorders` (open) | Quantity still to receive and expected date: the “on the way” figure. |
-| Transfers | `GET /transferorders` | Warehouse → clinic moves are not sales. |
-| Vendors | `GET /vendors` | Lead time per vendor (and per-product overrides) is kept as a panel setting. |
+| The panel's tables | `supabase/migrations/20261115000001_panel_init.sql` | 17 tables in the panel's **own** Supabase project (not the CRM's). Row-level security is on everywhere, with no policies: only the server reads or writes. It is safe to run twice. |
+| Zoho reader | `src/server/zoho.ts` | Read-only. It caches one access token for an hour in the database and keeps its own call ceilings (10 a minute, 600 a day; both are settings). A full minute makes it **wait** for the next one. It stops on the daily ceiling, on the run's time budget, or on a 429 from Zoho. |
+| CRM reader | `src/server/crm.ts` | Read-only SQL on 6 CRM tables. It works out each stock movement's channel (clinic / online team / website) and kind (sale, return, free, exchange, stock received, loss), each in **IST days**, with the value from the sale line after its discount. The query was checked on production for 13 Nov (clinics 442 units ₹6.99 L, online team 520 units ₹8.20 L, website 92 units ₹1.52 L). |
+| The sync | `src/server/sync.ts` | Six jobs, each logged in `sync_runs`. Details below. |
+| The data feed | `src/server/dataset.ts`, `src/app/api/dataset` | Builds what the screens show from the panel's tables. It refuses (in plain words) until the first sync has reached every location. |
+| Scheduled runs | `vercel.json`, `src/app/api/cron/sync` | Every 2 hours at :17 past (UTC), plus a daily run at 01:41 UTC (07:11 IST). Each needs `Authorization: Bearer <CRON_SECRET>`. |
+| Access key | `src/server/access.ts`, `src/app/api/unlock`, `src/components/LoadScreen.tsx` | An interim gate until personal logins exist. The live panel asks for a key; the browser keeps a 30-day httpOnly cookie that holds a hash, never the key. With no key set on the server, live data is refused. |
+| Live switch | `src/lib/data/hooks.ts` | `NEXT_PUBLIC_DATA_SOURCE=live` makes the screens read `/api/dataset` instead of the sample data. |
 
-**Diet plans** (`GL-DIET1M/2M/3M`) have no stock (the clinic CRM lists them in the `inventory.stockless_skus` setting) and are left out of stock and indent.
+### The six sync jobs
 
-## 3 · The shared Zoho request limit (most important constraint)
+| Job | Every | Reads | Zoho calls |
+|---|---|---|---|
+| `zoho_catalog` | 2 h | Zoho locations + item list (price, purchase price, vendor, tracked or not) | 2 (+1 per extra 200 items) |
+| `crm_reference` | 2 h | CRM clinics (with their Zoho location) and CRM products (with their Zoho item) | 0 |
+| `zoho_stock` | 2 h | Stock on hand per location: one call per location, oldest-read first. A refused location is retried once a day. Keeps one stock photo per day. | about 11 |
+| `crm_flows` | 2 h | Daily sales/returns/free/exchange per product × clinic × channel. The first run fills 180 days; later runs re-read the last 3 days, so a voided sale disappears. | 0 |
+| `crm_health` | 2 h | CRM stock changes Zoho refused in the last 30 days, per clinic | 0 |
+| `zoho_access` | daily | Which Zoho areas the login may read; open purchase orders (up to 25) for "on the way" | about 30 |
 
-- Gleuhr has **one Zoho org**, shared by the clinic CRM and the online CRM. It allows **80 requests a minute in total**, and the two CRMs count every call in the shared database (`zoho_rate_state`, reserved through `zoho_reserve_call`; a 429 from Zoho blocks both through `zoho_block`).
-- Zoho also caps calls **per day by plan** (clinic CRM notes: Free 1k · Standard 2k · Professional 5k · Premium 10k; which plan Gleuhr is on is still to be verified). Stock display reads in the clinic CRM have their own ceilings (`zoho.stock_reads_per_minute`, `zoho.stock_reads_per_day`).
-- **The panel must not starve the CRMs’ stock pushes.** Either reserve every panel call through the same shared budget, or agree a fixed small ceiling for the panel with whoever owns that database.
-- Rough panel need (estimate): 1 call for locations + about 20 for a full stock snapshot (10 locations × 2 pages) + a few pages of adjustments, orders and POs per hourly sync. That is in the low hundreds a day, well inside even the smallest paid plan if synced incrementally (`last_modified_time`) and never per page view.
+About **190 Zoho calls a day** in total, against the panel's own ceiling of 600, inside the org's shared limit. A 2-hourly run takes about 1–2 minutes, because the 10-a-minute ceiling makes it wait.
 
-## 4 · Known risk to check first
+### The rules the data follows (decided here; every one is tested)
 
-The clinic CRM recorded (open question Q-5646) that on 22 Oct the live org returned **194 items for Chandigarh’s location with no stock count**. If per-location stock comes back empty, the panel cannot show clinic stock from Zoho. **Do one budgeted read of one location before building anything on it.**
+- **A product = a Zoho item that a CRM sells.** A CRM product with no usable Zoho item can't be planned. Its sales are left out, and Data health §6 lists it by name with its last-90-day sales. Today that is 13 of 55 CRM products, 9 of which sold in the last 90 days; the top one is "Blemishes Pigmentation facial Treatment kit" with 360 units.
+- **Stock is per Zoho location.** A location the Zoho login may not read shows **unknown, never 0**, and totals say what they leave out.
+- **Where stock comes out:**
+  - A clinic's sales come off its Zoho location; an unlinked clinic's come off the primary location (Mohali).
+  - Online-team and website orders come off the location they ship from.
+  - Received or written-off stock is not a sale and never makes a place a sales point.
+- **History starts when the product was added to the CRM**, not at its first sale, so a slow seller isn't treated as "new" with an inflated rate.
+- **Stock-out days** are left out of the rate only when that day's stock photo shows nothing at any readable location **and** nothing sold that day. Days before the photos began are never dropped.
+- **A channel's data starts** at its first recorded sale of any product. Amazon and Flipkart show "not connected" with the reason.
+- **Price** is the CRM's price. **Cost** is Zoho's purchase price, or 30% of the price when Zoho's is a ₹10 placeholder (the 30% is a setting).
 
-## 5 · Decision needed: where sales come from
+### How it was verified (15 Nov 2026)
 
-Two options for clinic and online-team sales:
-1. **From Zoho** (as the brief says): read inventory adjustments by reason. Costs Zoho calls; carries quantities, not prices.
-2. **From the shared Gleuhr database**: the `stock_movements` table already has every clinic and online-team movement with clinic, product, quantity, reason and time. It costs no Zoho calls, but it needs read access to that database, which the clinic CRM’s rules treat as production (ask first; read-only).
+- **41 automated tests.** The 7 end-to-end tests run the real migration on an in-memory Postgres (PGlite), a fake CRM with production's table shapes, and a fake Zoho. They cover: full sync → data feed → wire format → the screens' maths; ceilings; pacing; 429; time budget; stalest-first; re-reads.
+- With `PG_TEST_URL` set, the same end-to-end tests also run on a real PostgreSQL 16 through **postgres.js, the driver production uses**. That run found a real bug the in-memory database hid: JSON batches arrived double-encoded, so every sync write failed. It is now fixed (`$1::text::jsonb`, see `src/server/db.ts`). The test was checked to fail when the bug is put back.
+- **The live path, end to end:**
+  - A `next start` build in live mode ran against local Postgres + fake Zoho: the scheduled runs, the access key, the data feed.
+  - `e2e/live-flow.cjs` (18 browser checks) passed: the locked screen, a wrong key, the live badge, Mumbai unknown on Stock, left-out products and sync status on Data health, the cookie hidden from scripts.
 
-Amazon, Flipkart and Shopify come from Zoho either way.
+**Check the live path locally**, if you have PostgreSQL:
+1. Create two databases.
+2. Run the migration on one.
+3. Load the fake CRM from `src/server/sync.test.ts` (`CRM_SCHEMA`) into the other.
+4. Build with `NEXT_PUBLIC_DATA_SOURCE=live`.
+5. `next start` with the variables of §2.
+6. Call `/api/cron/sync?run=all` with the secret.
+7. Run `PANEL_KEY=… node e2e/live-flow.cjs`.
 
-## 6 · Shape of the backend
+---
 
-- A scheduled sync job (every 1–2 hours plus a nightly full stock snapshot) writes into the panel’s own database: products, locations, daily stock snapshots, daily sales by product × source, open POs.
-- The same `src/lib/domain/formulas.ts` runs on the server each night and writes per-product metrics (rate, projections, cover, status, order quantity). The screens then read those instead of `src/lib/mock`; `useDataset()` in `src/lib/data/hooks.ts` is the one swap point.
-- Settings, approvals and plan submissions move from browser storage to the database, with versions kept and every change logged.
-- Email: Zoho ZeptoMail or SMTP. WhatsApp: WhatsApp Business Platform with Meta-approved templates. Every send is logged (the Alerts page’s log).
-- Plan links: one personal link per person per cycle, closing at the deadline.
-- Login with roles: admin (CBO), viewer (MD, Herman), planner (MH, SH, online team, Manisha).
+## 2 · Switching it on (in order)
 
-## 7 · Still to confirm with the business
+1. **The panel's own Supabase project.** Create it, or give me the connector to one, and I apply `supabase/migrations/20261115000001_panel_init.sql`. Its connection string (Transaction pooler, port 6543) becomes `PANEL_DATABASE_URL`.
 
-- 23rd vs 25th: the panel assumes 23rd = request email with links, 25th = deadline (submitted plans emailed to CBO, MD, Herman), 26th = consolidated report.
-- Real email addresses and the CBO’s WhatsApp number (Settings currently holds placeholders).
-- Vendor lead times and pack sizes per product (sample values today).
+2. **A read-only login on the CRM database**, made by the clinic CRM team through their own process (their repo owns that database's changes, and production changes need the founder's word):
+   - It may only `SELECT` six tables: `clinics`, `retail_products`, `stock_movements`, `online_shopify_orders`, `product_sale_lines`, `online_order_lines`.
+   - Those tables have row-level security, so the login must be able to read through it. The clinic team decides how (a policy for this login, or `BYPASSRLS`).
+   - Its connection string becomes `CRM_DATABASE_URL`.
+   - **Never the CRM's main login.**
+
+3. **Zoho:**
+   - Make a **new** client secret and refresh token. The ones shared in chat should be retired.
+   - Ideally use a Zoho user that can read every location, purchase orders and transfer orders.
+   - Today's login is refused on Mumbai, Ahmedabad, Pune and both darkstores, and on sales orders, invoices and transfer orders.
+
+4. **Vercel project** (`.env.example` lists every name):
+   - Set `PANEL_DATABASE_URL`, `CRM_DATABASE_URL`, the six `ZOHO_*` values, `CRON_SECRET` (16+ characters), `PANEL_ACCESS_KEY` (12+ characters) and `NEXT_PUBLIC_DATA_SOURCE=live`.
+   - Deploy. The two scheduled runs come from `vercel.json`.
+   - Check the plan allows a scheduled job every 2 hours, and functions of up to 300 seconds. If functions get less time, set `SYNC_TIME_BUDGET_SECONDS` lower: what a run doesn't reach, the next run reads first.
+
+5. **First sync by hand.** It fills 180 days of sales and every location's stock. Run it with your own secret in place of `<CRON_SECRET>`, then open the panel and type the access key:
+
+   ```bash
+   curl -H "Authorization: Bearer <CRON_SECRET>" "https://<panel-url>/api/cron/sync?run=all"
+   ```
+
+   Data health then shows what reached the panel and what didn't.
+
+---
+
+## 3 · Not built yet (next stage)
+
+- **Personal logins with roles** (CBO admin; MD and Herman view; MH, SH, the online team and Manisha plan). Until then, everyone with the key sees the same panel, and the "Viewing as" switch is a preview of each role, not security.
+- **Saving for everyone.** Approvals, plan submissions, settings and lead times still save **in each person's browser only**, and the screens say so. Their tables already exist (`indent_approvals`, `plan_submissions`, `settings`), waiting for logins so each save records who made it.
+- **Email and WhatsApp sending** (alerts to the CBO, the 23rd/25th and Thursday plan requests, the consolidated report) and **personal plan links**. Every send will be logged in `notifications_log`.
+- **File attachments** on plans (needs file storage).
+- **Amazon and Flipkart:** first, how those orders are recorded.
+
+## 4 · Reference: Zoho facts this relies on (checked 14–15 Nov 2026, read-only)
+
+- India data centre. The org is shared with the clinic and online CRMs: 80 calls a minute in total, plus a daily cap by plan.
+- `GET /locations` lists all 16 locations. Mohali – Warehouse is primary: an adjustment sent without a location lands there.
+- `GET /items?location_id=…` returns every item, with that location's stock, in one page (197 items).
+  - A location the login may not read answers code 400040.
+  - Sales orders, invoices and transfer orders answer code 57 ("not authorized").
+- The CRMs post every stock change to Zoho as an inventory adjustment at the clinic's Zoho location. Refusals stay in the CRM (Data health §5).
+
+## 5 · Still to confirm with the business
+
+- **23rd vs 25th:** the panel assumes the 23rd = the request email with links, the 25th = the deadline (submitted plans emailed to the CBO, MD and Herman), and the 26th = the consolidated report.
+- **Contact details:** the real email addresses and the CBO's WhatsApp number (Settings holds placeholders).
+- **Lead times and pack sizes:** the vendor lead times and pack sizes per product. Zoho has no lead time, so every vendor starts at 15 days (a setting).
+- **Amazon and Flipkart:** how they are recorded, and what the two darkstores are used for.

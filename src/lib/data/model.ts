@@ -59,7 +59,19 @@ export interface DataHealth {
   failedPushes: PushHealth[];
   /** What the Zoho login may read. */
   zohoAccess: { area: string; ok: boolean; note: string }[];
+  /** CRM products whose sales are left out of every page, and why (active ones, or any sold in the last 90 days). */
+  leftOutProducts: LeftOutProduct[];
+  /** Active Zoho items that no CRM sells: not planned here. null = not counted (sample mode). */
+  zohoOnlyItems: number | null;
   lastSync: { job: string; at: string | null; ok: boolean; note: string }[];
+}
+
+export interface LeftOutProduct {
+  name: string;
+  reason: string;
+  /** Units sold in the last 90 days (sales only, before returns). */
+  unitsSold90d: number;
+  lastSale: string | null;
 }
 
 export interface Dataset {

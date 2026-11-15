@@ -1,0 +1,6 @@
+{
+  "crons": [
+    { "path": "/api/cron/sync?run=frequent", "schedule": "17 */2 * * *" },
+    { "path": "/api/cron/sync?run=daily", "schedule": "41 1 * * *" }
+  ]
+}

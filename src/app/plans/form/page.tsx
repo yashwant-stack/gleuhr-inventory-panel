@@ -98,7 +98,7 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
     const now = new Date().toISOString();
     const submittedAt = ds.origin === "sample" ? `${ds.today}${now.slice(10)}` : now;
     submitPlan({ cycleId: cycle.id, part, by: role.id, submittedAt, lines, note: draft.note, version: (existing?.version ?? 0) + 1 });
-    toast(`${meta.label} for ${cycle.label} submitted. Saved in this browser; the email to CBO${cycle.kind === "monthly" ? ", MD and Herman" : ""} goes out once email is connected.`);
+    toast(`${meta.label} for ${cycle.label} submitted. Saved in this browser only; the email to CBO${cycle.kind === "monthly" ? ", MD and Herman" : ""} goes out once email is connected.`);
     router.push("/plans");
   };
 
@@ -276,7 +276,7 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
         </label>
 
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <Button icon={<Paperclip size={14} />} disabled disabledReason="Attaching a file (PDF / Excel / PPT) works once the backend is connected.">
+          <Button icon={<Paperclip size={14} />} disabled disabledReason="Attaching a file (PDF / Excel / PPT) comes in the next stage, with file storage.">
             Attach plan file (optional)
           </Button>
           <div className="ml-auto flex items-center gap-2">
