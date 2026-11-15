@@ -3,7 +3,7 @@
 import { CalendarDays, Check, ChevronDown } from "lucide-react";
 import { useRef, useState } from "react";
 import { fmtRange } from "@/lib/dates";
-import { getDataset, TODAY } from "@/lib/mock/dataset";
+import { useDataset } from "@/lib/data/hooks";
 import { DATE_PRESETS, usePanel } from "@/lib/state/store";
 import { Popover } from "./Popover";
 
@@ -14,7 +14,9 @@ export function DateRange() {
   const [open, setOpen] = useState(false);
   const [cFrom, setCFrom] = useState(from);
   const [cTo, setCTo] = useState(to);
-  const minDay = getDataset().days[0]!;
+  const ds = useDataset();
+  const minDay = ds.days[0]!;
+  const TODAY = ds.today;
   const label = preset === "custom" ? "Custom" : (DATE_PRESETS.find((p) => p.id === preset)?.label ?? "");
   return (
     <>
@@ -74,7 +76,7 @@ export function DateRange() {
           >
             Apply custom range
           </button>
-          <p className="mt-1.5 text-[11px] text-muted">Sample data covers {fmtRange(minDay, TODAY)}.</p>
+          <p className="mt-1.5 text-[11px] text-muted">{ds.origin === "sample" ? "Sample data" : "Data"} covers {fmtRange(minDay, TODAY)}.</p>
         </div>
       </Popover>
     </>

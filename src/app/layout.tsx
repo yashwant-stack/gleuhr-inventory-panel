@@ -5,6 +5,7 @@ import "@fontsource/hanken-grotesk/600.css";
 import "@fontsource/hanken-grotesk/700.css";
 import "./globals.css";
 import { Shell } from "@/components/Shell";
+import { DatasetProvider } from "@/lib/data/hooks";
 
 export const metadata: Metadata = {
   title: "Gleuhr · Inventory Planning",
@@ -15,7 +16,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en-IN">
       <body>
-        <Shell>{children}</Shell>
+        <DatasetProvider>
+          <Shell>{children}</Shell>
+        </DatasetProvider>
       </body>
     </html>
   );

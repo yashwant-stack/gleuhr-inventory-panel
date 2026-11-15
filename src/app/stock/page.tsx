@@ -5,14 +5,13 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { FilterBar } from "@/components/FilterBar";
 import { Button, Card, CardHeader, Empty, Note, PageHeader, Segmented, sortRows, SortTh, StatTile, STATUS_META, StatusChip } from "@/components/ui";
-import { allTransfers, productMatches, STATUS_ORDER } from "@/lib/data/engine";
+import { allTransfers, productMatches, sendToClinics, STATUS_ORDER } from "@/lib/data/engine";
 import { useDataset, useFilters, useMetrics } from "@/lib/data/hooks";
 import { downloadCsv } from "@/lib/csv";
 import { IS_PREVIEW, PREVIEW_NO_DOWNLOAD } from "@/lib/platform";
 import { fmtDay } from "@/lib/dates";
 import type { StockStatus } from "@/lib/domain/types";
 import { fmtDays, fmtInt, fmtMoneyShort, fmtRate } from "@/lib/format";
-import { WAREHOUSE_ID } from "@/lib/mock/catalog";
 import { usePanel } from "@/lib/state/store";
 
 function initialStatuses(q: string | null): StockStatus[] {
@@ -47,7 +46,9 @@ function StockHealth() {
     sort.dir,
   );
   const locs = ds.locations.filter((l) => f.locations.length === 0 || f.locations.includes(l.id));
-  const transfers = useMemo(() => allTransfers(ds, settings), [ds, settings]);
+  const transfers = useMemo(() => allTransfers(ds, settings, metrics), [ds, settings, metrics]);
+  const sends = useMemo(() => sendToClinics(ds, settings, metrics), [ds, settings, metrics]);
+  const unreadable = ds.locations.filter((l) => !l.readable);
   const over = visible.filter((m) => m.status === "overstock").sort((a, b) => b.excess * b.product.cost - a.excess * a.product.cost);
 
   const toggle = (s: StockStatus) => setStatuses((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
@@ -88,7 +89,14 @@ function StockHealth() {
           </Button>
         }
       />
-      <FilterBar date={false} channels={false} note="Location changes which stock columns you see" />
+      <FilterBar date={false} channels={false} locations="stock" note="Location changes which stock columns you see" />
+      {unreadable.length ? (
+        <div className="mb-3">
+          <Note tone="warn">
+            Stock totals leave out {unreadable.map((l) => l.name).join(", ")}: the Zoho login isn’t allowed to read {unreadable.length === 1 ? "it" : "them"} yet. See Data health.
+          </Note>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {STATUS_ORDER.map((s) => {
@@ -186,8 +194,9 @@ function StockHealth() {
                   <tr>
                     <th>Product</th>
                     {locs.map((l) => (
-                      <th key={l.id} className="num">
-                        {l.id === WAREHOUSE_ID ? "Warehouse" : l.name}
+                      <th key={l.id} className="num" title={l.readable ? undefined : "The Zoho login can’t read this location"}>
+                        {l.isPrimary ? "Warehouse" : l.name}
+                        {l.readable ? null : " ?"}
                       </th>
                     ))}
                     <th className="num">Total</th>
@@ -199,10 +208,17 @@ function StockHealth() {
                     <tr key={m.product.id} className="clickable" onClick={() => openProduct(m.product.id)}>
                       <td className="max-w-[220px] truncate font-medium">{m.product.name}</td>
                       {locs.map((l) => {
-                        const q = m.stockByLocation[l.id] ?? 0;
+                        const q = m.stockByLocation[l.id];
+                        if (q === null || (q === undefined && !l.readable)) {
+                          return (
+                            <td key={l.id} className="num text-muted" title="Can’t read this location in Zoho">
+                              ?
+                            </td>
+                          );
+                        }
                         return (
-                          <td key={l.id} className={`num ${q === 0 ? "text-st-critical" : ""}`}>
-                            {fmtInt(q)}
+                          <td key={l.id} className={`num ${(q ?? 0) <= 0 ? "text-st-critical" : ""}`}>
+                            {fmtInt(q ?? 0)}
                           </td>
                         );
                       })}
@@ -219,14 +235,59 @@ function StockHealth() {
         )}
       </Card>
 
+      <Card className="mt-3" pad={false}>
+        <div className="p-4 pb-2">
+          <CardHeader
+            className="mb-0"
+            title="Send to clinics from Mohali"
+            sub={`A clinic below ${settings.replenishLeadDays + settings.safetyDays} days of its own usage is topped up to ${settings.replenishLeadDays + settings.replenishCoverDays + settings.safetyDays} days, most urgent first.`}
+          />
+        </div>
+        {sends.length === 0 ? (
+          <div className="px-4 pb-4">
+            <Empty title="No clinic needs stock">Every clinic holds enough for its own usage.</Empty>
+          </div>
+        ) : (
+          <div className="max-h-[420px] overflow-auto scroll-thin">
+            <table className="dtable">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Send to</th>
+                  <th className="num">Has</th>
+                  <th className="num">Uses / day</th>
+                  <th className="num">Days left</th>
+                  <th className="num">Send</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sends.map((x, i) => (
+                  <tr key={i} className="clickable" onClick={() => openProduct(x.product.id)}>
+                    <td className="max-w-[240px] truncate font-medium">{x.product.name}</td>
+                    <td>{x.to.name}</td>
+                    <td className="num">{fmtInt(x.toStock)}</td>
+                    <td className="num">{fmtRate(x.rate)}</td>
+                    <td className={`num ${x.toCover < settings.replenishLeadDays ? "font-semibold text-st-critical" : ""}`}>{fmtDays(x.toCover)}</td>
+                    <td className="num font-semibold">
+                      {fmtInt(x.qty)}
+                      {x.covered ? null : <span className="ml-1 text-[11px] font-semibold text-st-critical" title="Mohali doesn’t hold enough for this">short</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
       <div className="mt-3 grid gap-3 xl:grid-cols-2">
         <Card>
           <CardHeader
-            title="Move stock between clinics first"
+            title="If Mohali is short: move between clinics"
             sub={`A clinic with more than ${settings.transferHighDays} days of a product sends to one with under ${settings.transferLowDays} days, before buying more.`}
           />
           {transfers.length === 0 ? (
-            <Empty title="No transfers needed">Every clinic is within range.</Empty>
+            <Empty title="No moves needed">Mohali can cover every clinic that needs stock.</Empty>
           ) : (
             <ul className="divide-y divide-line">
               {transfers.map((t, i) => (

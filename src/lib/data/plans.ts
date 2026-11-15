@@ -4,11 +4,10 @@
 import { addDays, diffDays } from "../dates";
 import { dailyRate, gapPct, isGapFlagged, projection } from "../domain/formulas";
 import type { ChannelId, FormulaSettings, Product } from "../domain/types";
-import { CHANNELS, D2C_CHANNELS, LOCATIONS } from "../mock/catalog";
-import type { Dataset } from "../mock/dataset";
 import { CYCLES, SEED_SUBMISSIONS, type PlanCycle } from "../mock/plans";
 import type { PlanPart, RoleId } from "../roles";
-import { CHANNEL_IDS, historyDays, sourceSeries, totalSeries, unitValue, type ProductMetrics } from "./engine";
+import { avgUnitValue, CHANNEL_IDS, channelHistoryDays, rateFor, type ProductMetrics } from "./engine";
+import { connectedChannels, type Dataset, type Source } from "./model";
 
 export interface PlanLine {
   key: string;
@@ -56,21 +55,26 @@ export function cycleState(c: PlanCycle, today: string): CycleState {
   return "closed";
 }
 
-/** The lines each part plans: channels, D2C channels or clinics. */
-export function partKeys(part: PlanPart): { key: string; label: string }[] {
-  if (part === "d2c") return D2C_CHANNELS.map((c) => ({ key: c, label: CHANNELS.find((x) => x.id === c)!.label }));
-  if (part === "clinic") return LOCATIONS.filter((l) => l.kind === "clinic").map((l) => ({ key: l.id, label: l.name }));
-  return CHANNELS.map((c) => ({ key: c.id, label: c.label }));
+/** The lines each part plans: connected channels, connected D2C channels, or active clinics. */
+export function partKeys(ds: Dataset, part: PlanPart): { key: string; label: string }[] {
+  const connected = connectedChannels(ds);
+  const label = (c: ChannelId) => ds.channels.find((x) => x.id === c)!.label;
+  if (part === "d2c") return connected.filter((c) => c !== "clinic").map((c) => ({ key: c, label: label(c) }));
+  if (part === "clinic") return ds.clinics.filter((c) => c.active).map((c) => ({ key: `clinic:${c.id}`, label: c.name }));
+  return connected.map((c) => ({ key: c, label: label(c) }));
 }
 
-function keySeries(ds: Dataset, pi: number, key: string): ArrayLike<number> {
-  if ((CHANNEL_IDS as string[]).includes(key)) return totalSeries(ds, pi, [key as ChannelId]);
-  const si = ds.sources.findIndex((s) => s.channel === "clinic" && s.locationId === key);
-  return si >= 0 ? sourceSeries(ds, pi, si) : new Uint16Array(ds.days.length);
+/** Which sources a plan line covers: a channel, or one clinic's own clinic sales. */
+function keyPick(key: string): (s: Source) => boolean {
+  if (key.startsWith("clinic:")) {
+    const id = key.slice(7);
+    return (s) => s.channel === "clinic" && s.clinicId === id;
+  }
+  return (s) => s.channel === key;
 }
 
 function keyChannel(key: string): ChannelId {
-  return (CHANNEL_IDS as string[]).includes(key) ? (key as ChannelId) : "clinic";
+  return key.startsWith("clinic:") ? "clinic" : (key as ChannelId);
 }
 
 /**
@@ -80,24 +84,38 @@ function keyChannel(key: string): ChannelId {
 export function planBaseline(ds: Dataset, settings: FormulaSettings, part: PlanPart, cycle: PlanCycle, asOf?: string): TrendRow[] {
   const days = periodDays(cycle);
   const cut = Math.min(ds.days.length, Math.max(1, diffDays(asOf ?? ds.today, ds.days[0]!) + 1));
-  return partKeys(part).map(({ key, label }) => {
+  const lag = ds.days.length - cut;
+  return partKeys(ds, part).map(({ key, label }) => {
+    const pick = keyPick(key);
+    const ch = keyChannel(key);
     let last30 = 0;
     let prev30 = 0;
     let last30Value = 0;
     let systemUnits = 0;
     let systemValue = 0;
     ds.products.forEach((p, pi) => {
-      const series = Array.from(keySeries(ds, pi, key)).slice(0, cut);
-      const n = series.length;
-      let l = 0;
-      for (let i = Math.max(0, n - 30); i < n; i++) l += series[i]!;
-      for (let i = Math.max(0, n - 60); i < n - 30; i++) prev30 += series[i]!;
-      last30 += l;
-      last30Value += l * unitValue(p, keyChannel(key));
-      const r = dailyRate(series, settings, { inStock: ds.inStock[pi]!.slice(0, cut), historyDays: Math.min(historyDays(ds, p), n) }).rate;
+      const series = new Array<number>(cut).fill(0);
+      const values = new Array<number>(cut).fill(0);
+      ds.sources.forEach((src, si) => {
+        if (!pick(src)) return;
+        const a = ds.sold[pi]![si]!;
+        const v = ds.value[pi]![si]!;
+        for (let d = 0; d < cut; d++) {
+          series[d]! += a[d]!;
+          values[d]! += v[d]!;
+        }
+      });
+      for (let i = Math.max(0, cut - 30); i < cut; i++) {
+        last30 += series[i]!;
+        last30Value += values[i]!;
+      }
+      for (let i = Math.max(0, cut - 60); i < cut - 30; i++) prev30 += series[i]!;
+      const hd = Math.max(0, channelHistoryDays(ds, p, ch) - lag);
+      if (hd <= 0) return;
+      const r = dailyRate(series, settings, { inStock: ds.inStock?.[pi]?.slice(0, cut), historyDays: hd }).rate;
       const units = projection(r, days);
       systemUnits += units;
-      systemValue += units * unitValue(p, keyChannel(key));
+      systemValue += units * avgUnitValue(ds, pi, ch);
     });
     return {
       key,
@@ -152,13 +170,17 @@ export function actualsForPeriod(ds: Dataset, part: PlanPart, cycle: PlanCycle):
   const elapsedDays = Math.max(0, diffDays(end, cycle.periodFrom) + 1);
   const byKey: Record<string, number> = {};
   if (elapsedDays === 0) return { byKey, elapsedDays };
-  const s = diffDays(cycle.periodFrom, ds.days[0]!);
+  const s = Math.max(0, diffDays(cycle.periodFrom, ds.days[0]!));
   const e = diffDays(end, ds.days[0]!);
-  for (const { key } of partKeys(part)) {
+  for (const { key } of partKeys(ds, part)) {
+    const pick = keyPick(key);
     let q = 0;
     ds.products.forEach((_, pi) => {
-      const series = keySeries(ds, pi, key);
-      for (let d = Math.max(0, s); d <= e; d++) q += series[d] ?? 0;
+      ds.sources.forEach((src, si) => {
+        if (!pick(src)) return;
+        const a = ds.sold[pi]![si]!;
+        for (let d = s; d <= e; d++) q += a[d] ?? 0;
+      });
     });
     byKey[key] = q;
   }
@@ -244,7 +266,7 @@ export function consolidate(
     const m = metrics[pi]!;
     let demand = 0;
     for (const ch of CHANNEL_IDS) {
-      const r = dailyRate(totalSeries(ds, pi, [ch]), settings, { inStock: ds.inStock[pi], historyDays: historyDays(ds, p) }).rate;
+      const r = rateFor(ds, settings, pi, (src) => src.channel === ch, "used").rate;
       demand += r * days * (uplift[ch] ?? 1);
     }
     const arriving = m.openPOs.filter((po) => po.expectedOn <= addDays(cycle.periodTo, 0)).reduce((a, po) => a + po.qty, 0);

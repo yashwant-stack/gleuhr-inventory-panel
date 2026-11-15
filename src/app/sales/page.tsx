@@ -6,6 +6,7 @@ import { SalesTrendChart } from "@/components/charts";
 import { FilterBar } from "@/components/FilterBar";
 import { Button, Card, CardHeader, ChannelSplitBar, Delta, Empty, PageHeader, Segmented, sortRows, SortTh, Sparkline, StatTile, StatusChip } from "@/components/ui";
 import { CHANNEL_IDS, dailyTotals, previousRange, salesByProduct } from "@/lib/data/engine";
+import { connectedChannels } from "@/lib/data/model";
 import { useDataset, useFilters, useMetrics } from "@/lib/data/hooks";
 import { downloadCsv } from "@/lib/csv";
 import { IS_PREVIEW, PREVIEW_NO_DOWNLOAD } from "@/lib/platform";
@@ -24,7 +25,7 @@ export default function SalesPage() {
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "value", dir: "desc" });
   const [showZero, setShowZero] = useState(false);
 
-  const channels = (f.channels.length ? f.channels : CHANNEL_IDS) as ChannelId[];
+  const channels = (f.channels.length ? f.channels : connectedChannels(ds));
   const sales = useMemo(() => salesByProduct(ds, f), [ds, f]);
   const prev = useMemo(() => salesByProduct(ds, f, previousRange(f.from, f.to)), [ds, f]);
   const points = useMemo(() => dailyTotals(ds, f), [ds, f]);

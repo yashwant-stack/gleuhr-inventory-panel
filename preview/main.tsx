@@ -10,6 +10,7 @@ import { StrictMode, type ComponentType } from "react";
 import { createRoot } from "react-dom/client";
 import AlertsPage from "@/app/alerts/page";
 import ChannelsPage from "@/app/channels/page";
+import HealthPage from "@/app/health/page";
 import IndentPage from "@/app/indent/page";
 import HomePage from "@/app/page";
 import PlanFormPage from "@/app/plans/form/page";
@@ -20,6 +21,7 @@ import SalesPage from "@/app/sales/page";
 import SettingsPage from "@/app/settings/page";
 import StockPage from "@/app/stock/page";
 import { Shell } from "@/components/Shell";
+import { DatasetProvider } from "@/lib/data/hooks";
 import { usePathname } from "./shims/next-navigation";
 
 const PAGES: Record<string, ComponentType> = {
@@ -34,6 +36,7 @@ const PAGES: Record<string, ComponentType> = {
   "/reports": ReportsPage,
   "/alerts": AlertsPage,
   "/settings": SettingsPage,
+  "/health": HealthPage,
 };
 
 function RouteView() {
@@ -46,9 +49,11 @@ const root = document.getElementById("root");
 if (root) {
   createRoot(root).render(
     <StrictMode>
-      <Shell>
-        <RouteView />
-      </Shell>
+      <DatasetProvider>
+        <Shell>
+          <RouteView />
+        </Shell>
+      </DatasetProvider>
     </StrictMode>,
   );
 }

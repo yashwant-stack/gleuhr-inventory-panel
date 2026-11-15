@@ -47,6 +47,7 @@ export const PAGE_ACCESS: Record<string, Access[]> = {
   "/reports": ["admin", "viewer"],
   "/alerts": ["admin", "viewer"],
   "/settings": ["admin", "viewer"],
+  "/health": ["admin", "viewer"],
 };
 
 export function canOpen(path: string, access: Access): boolean {

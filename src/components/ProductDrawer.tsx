@@ -2,17 +2,17 @@
 
 import { X } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { channelRates, clinicRates, CHANNEL_IDS } from "@/lib/data/engine";
+import { locationBreakdown, seriesFor } from "@/lib/data/engine";
+import { connectedChannels } from "@/lib/data/model";
 import { useDataset, useMetrics, useRole } from "@/lib/data/hooks";
 import { fmtDay, fmtDayLong } from "@/lib/dates";
-import { daysOfCover } from "@/lib/domain/formulas";
 import { PROJECTION_HORIZONS } from "@/lib/domain/types";
 import { fmtDays, fmtInt, fmtMoney, fmtRate } from "@/lib/format";
-import { WAREHOUSE_ID } from "@/lib/mock/catalog";
 import { usePanel } from "@/lib/state/store";
 import { lastNDays, ProductDailyChart } from "./charts";
 import { Select } from "./Select";
-import { ChannelTag, StatusChip } from "./ui";
+import { ChannelTag, channelLabel, StatusChip } from "./ui";
+import type { ChannelId } from "@/lib/domain/types";
 import { toast } from "./Toast";
 
 function Row({ k, v, strong }: { k: string; v: React.ReactNode; strong?: boolean }) {
@@ -58,23 +58,19 @@ export function ProductDrawer() {
   }, [id, close]);
 
   const extra = useMemo(() => {
-    if (pi < 0) return null;
-    const series = Array.from({ length: 60 }, (_, i) => {
-      let q = 0;
-      ds.sources.forEach((_, si) => (q += ds.qty[pi]![si]![ds.days.length - 60 + i]!));
-      return q;
-    });
-    return { series, ch: channelRates(ds, settings, pi), cl: clinicRates(ds, settings, pi) };
-  }, [ds, pi, settings]);
+    if (pi < 0 || !m) return null;
+    const series = seriesFor(ds, pi, () => true, "used").slice(-60);
+    return { series, locations: locationBreakdown(ds, settings, pi, m) };
+  }, [ds, pi, settings, m]);
 
   if (!id || !m || !extra) return null;
   const p = m.product;
   const w = settings;
-  const last30ByChannel = CHANNEL_IDS.map((c) => {
+  const last30ByChannel = connectedChannels(ds).map((c) => {
     let q = 0;
     ds.sources.forEach((s, si) => {
       if (s.channel !== c) return;
-      for (let d = ds.days.length - 30; d < ds.days.length; d++) q += ds.qty[pi]![si]![d]!;
+      for (let d = ds.days.length - 30; d < ds.days.length; d++) q += ds.sold[pi]![si]![d]!;
     });
     return { c, q };
   });
@@ -103,7 +99,7 @@ export function ProductDrawer() {
           <div className="grid grid-cols-2 gap-x-6">
             <div>
               <Row k="Daily sales rate" v={`${fmtRate(m.rate)} / day`} strong />
-              <Row k="Stock now" v={`${fmtInt(m.stock)} (WH ${fmtInt(m.warehouseStock)} + clinics ${fmtInt(m.clinicStock)})`} />
+              <Row k="Stock now" v={`${fmtInt(m.stock)} (WH ${fmtInt(m.warehouseStock)} + others ${fmtInt(m.clinicStock)})${m.unknownLocations.length ? ` + ${m.unknownLocations.length} unreadable` : ""}`} />
               <Row k="On the way" v={m.onOrder ? fmtInt(m.onOrder) : "—"} />
               <Row k="Days of cover" v={fmtDays(m.cover)} strong />
             </div>
@@ -117,7 +113,7 @@ export function ProductDrawer() {
 
           <div>
             <div className="mb-1 flex items-center justify-between">
-              <h3 className="text-[13px] font-semibold">Units sold, last 60 days</h3>
+              <h3 className="text-[13px] font-semibold">Units used, last 60 days (all channels)</h3>
               <span className="text-[11.5px] text-muted">dashed line = daily rate</span>
             </div>
             <ProductDailyChart days={lastNDays(ds.today, 60)} values={extra.series} rate={m.rate} />
@@ -181,35 +177,41 @@ export function ProductDrawer() {
           </div>
 
           <div>
-            <h3 className="mb-2 text-[13px] font-semibold">Stock by location</h3>
-            <table className="dtable text-[12.5px]">
-              <thead>
-                <tr>
-                  <th>Location</th>
-                  <th className="num">Stock</th>
-                  <th className="num">Sells / day</th>
-                  <th className="num">Days of cover</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ds.locations.map((l) => {
-                  const st = m.stockByLocation[l.id] ?? 0;
-                  const rate = l.id === WAREHOUSE_ID ? extra.ch.online_team + extra.ch.amazon + extra.ch.flipkart + extra.ch.website : (extra.cl[l.id] ?? 0);
-                  const cov = daysOfCover(st, rate);
-                  return (
-                    <tr key={l.id}>
-                      <td>
-                        {l.name}
-                        {l.id === WAREHOUSE_ID ? <span className="text-muted"> · online orders</span> : null}
-                      </td>
-                      <td className="num">{fmtInt(st)}</td>
-                      <td className="num">{fmtRate(rate)}</td>
-                      <td className={`num ${Number.isFinite(cov) && cov < w.transferLowDays ? "font-semibold text-st-critical" : ""}`}>{fmtDays(cov)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <h3 className="mb-1 text-[13px] font-semibold">Stock by location</h3>
+            <p className="mb-2 text-[11.5px] text-muted">Zoho counts stock per location. Each location’s usage is every channel that takes stock from it.</p>
+            <div className="overflow-x-auto scroll-thin">
+              <table className="dtable text-[12.5px]">
+                <thead>
+                  <tr>
+                    <th>Location</th>
+                    <th className="num">Stock</th>
+                    <th className="num">Uses / day</th>
+                    <th>Taken by</th>
+                    <th className="num">Days left</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {extra.locations
+                    .filter((r) => r.stock !== 0 || r.rate > 0 || r.stock === null)
+                    .map((r) => (
+                      <tr key={r.location.id}>
+                        <td className="whitespace-nowrap">{r.location.name}</td>
+                        <td className="num">{r.stock === null ? <span className="text-muted" title="The Zoho login can’t read this location">can’t read</span> : fmtInt(r.stock)}</td>
+                        <td className="num">{fmtRate(r.rate)}</td>
+                        <td className="text-[11.5px] text-ink-2">
+                          {Object.entries(r.byChannel)
+                            .filter(([, v]) => (v ?? 0) > 0)
+                            .map(([c, v]) => `${channelLabel(c as ChannelId, true)} ${fmtRate(v ?? 0)}`)
+                            .join(" · ") || "—"}
+                        </td>
+                        <td className="num">{r.cover === null ? "—" : fmtDays(r.cover)}</td>
+                        <td>{r.status === "unknown" ? <span className="text-[11.5px] text-muted">unknown</span> : <StatusChip status={r.status} size="sm" />}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2">

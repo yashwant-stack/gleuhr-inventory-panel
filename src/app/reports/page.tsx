@@ -14,7 +14,6 @@ import { addDays, diffDays, fmtDay, fmtRange } from "@/lib/dates";
 import { daysUntilOrder, indentQuantity } from "@/lib/domain/formulas";
 import { COVER_OPTIONS, type ChannelId } from "@/lib/domain/types";
 import { fmtInt, fmtMoneyShort, fmtPct } from "@/lib/format";
-import { WAREHOUSE_ID } from "@/lib/mock/catalog";
 import { CYCLES } from "@/lib/mock/plans";
 import { IS_PREVIEW, PREVIEW_NO_PRINT } from "@/lib/platform";
 import { PLAN_PARTS, roleById } from "@/lib/roles";
@@ -217,7 +216,7 @@ function LastPeriod({ cycleId }: { cycleId: string }) {
   const sales = all[`${cycle.id}:sales`];
   const from = cycle.periodFrom;
   const to = cycle.periodTo < ds.today ? cycle.periodTo : ds.today;
-  const range: Filters = { from, to, channels: [], locations: [], categories: [], search: "" };
+  const range: Filters = { from, to, channels: [], points: [], locations: [], categories: [], search: "" };
   const actual = salesByProduct(ds, range);
   if (!sales) return null;
   const elapsed = Math.max(1, diffDays(to, from) + 1);
@@ -291,15 +290,17 @@ function ReportChain() {
   const toggle = (n: number) => setOpen((o) => ({ ...o, [n]: !o[n] }));
 
   const past = useMemo(
-    () => [7, 15, 30].map((d) => ({ d, rows: salesByProduct(ds, { from: addDays(ds.today, -(d - 1)), to: ds.today, channels: [], locations: [], categories: [], search: "" }) })),
+    () => [7, 15, 30].map((d) => ({ d, rows: salesByProduct(ds, { from: addDays(ds.today, -(d - 1)), to: ds.today, channels: [], points: [], locations: [], categories: [], search: "" }) })),
     [ds],
   );
   const proj = useMemo(() => [7, 15, 30].map((d) => ({ d, v: projectionValueByChannel(ds, settings, d) })), [ds, settings]);
+  const connected = ds.channels.filter((c) => c.connected).map((c) => c.id);
   const groups: { label: string; chs: ChannelId[] }[] = [
     { label: "Website (Shopify)", chs: ["website"] },
-    { label: "Online products (Amazon, Flipkart, online team)", chs: ["amazon", "flipkart", "online_team"] },
+    { label: "Online team", chs: ["online_team"] },
+    { label: "Amazon + Flipkart", chs: ["amazon", "flipkart"] },
     { label: "Clinic sales", chs: ["clinic"] },
-  ];
+  ].filter((g) => g.chs.some((c) => connected.includes(c as ChannelId))) as { label: string; chs: ChannelId[] }[];
 
   const willBeLow = (h: number) => metrics.filter((m) => m.rate > 0 && m.stock + m.onOrder - m.rate * h < m.reorderPoint);
   const stillOver = (h: number) => metrics.filter((m) => m.rate > 0 && m.stock - m.rate * h > m.rate * settings.overstockDays);
@@ -327,7 +328,7 @@ function ReportChain() {
     <div className="space-y-3">
       <Note>Leadership reads this from the top (big picture) down. The system builds it from the bottom (stock facts) up. Each step opens its full page.</Note>
 
-      <ChainStep n={1} title="Overall product sales · 7 / 15 / 30 days" sub="Website · online products · clinic sales, with the projection plan" href="/channels" open={!!open[1]} onToggle={() => toggle(1)}>
+      <ChainStep n={1} title="Overall product sales · 7 / 15 / 30 days" sub="Website · online team · clinic sales, with the projection plan (Amazon / Flipkart once connected)" href="/channels" open={!!open[1]} onToggle={() => toggle(1)}>
         <div className="overflow-x-auto scroll-thin">
           <table className="dtable">
             <thead>
@@ -346,7 +347,7 @@ function ReportChain() {
               </tr>
             </thead>
             <tbody>
-              {[...groups, { label: "Total", chs: CHANNEL_IDS as ChannelId[] }].map((g) => (
+              {[...groups, { label: "Total", chs: connected }].map((g) => (
                 <tr key={g.label} className={g.label === "Total" ? "font-semibold" : ""}>
                   <td className="whitespace-nowrap">{g.label}</td>
                   {past.map((p) => (
@@ -428,8 +429,8 @@ function ReportChain() {
         <div className="mt-3 grid grid-cols-2 gap-x-6 text-[13px] md:grid-cols-5">
           {ds.locations.map((l) => (
             <div key={l.id} className="flex justify-between border-b border-line py-1">
-              <span className="text-ink-2">{l.id === WAREHOUSE_ID ? "Warehouse" : l.name}</span>
-              <span className="font-medium tabular">{fmtInt(metrics.reduce((a, m) => a + (m.stockByLocation[l.id] ?? 0), 0))}</span>
+              <span className="text-ink-2">{l.isPrimary ? "Warehouse" : l.name}</span>
+              <span className="font-medium tabular">{l.readable ? fmtInt(metrics.reduce((a, m) => a + (m.stockByLocation[l.id] ?? 0), 0)) : <span className="text-muted" title="The Zoho login can’t read this location">can’t read</span>}</span>
             </div>
           ))}
         </div>

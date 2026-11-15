@@ -7,6 +7,7 @@ import {
   CalendarCheck,
   ClipboardList,
   FileBarChart,
+  HeartPulse,
   LayoutDashboard,
   Lock,
   Menu,
@@ -19,9 +20,8 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
-import { useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
+import { useDataset, useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
 import { cycleState } from "@/lib/data/plans";
-import { getDataset, LAST_SYNCED_AT, TODAY } from "@/lib/mock/dataset";
 import { CYCLES } from "@/lib/mock/plans";
 import { canOpen, ROLES, type RoleId } from "@/lib/roles";
 import { usePanel } from "@/lib/state/store";
@@ -39,16 +39,16 @@ const NAV = [
   { href: "/plans", label: "Plans", Icon: CalendarCheck },
   { href: "/reports", label: "Reports", Icon: FileBarChart },
   { href: "/alerts", label: "Alerts", Icon: Bell },
+  { href: "/health", label: "Data health", Icon: HeartPulse },
   { href: "/settings", label: "Settings", Icon: Settings },
 ];
 
-const SYNC_TIME = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }).format(
-  new Date(LAST_SYNCED_AT),
-);
+const SYNC_FMT = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 
 const noopSubscribe = () => () => {};
 
 function useBadges(): Record<string, number> {
+  const ds = useDataset();
   const metrics = useMetrics();
   const subs = useSubmissions();
   return useMemo(() => {
@@ -56,11 +56,13 @@ function useBadges(): Record<string, number> {
     const toOrder = metrics.filter((m) => m.indentQty > 0 && (m.status === "critical" || m.status === "low")).length;
     let pending = 0;
     for (const c of CYCLES) {
-      if (cycleState(c, TODAY) !== "open") continue;
+      if (cycleState(c, ds.today) !== "open") continue;
       for (const part of ["marketing", "sales", "d2c", "clinic"]) if (!subs[`${c.id}:${part}`]) pending++;
     }
-    return { "/stock": urgent, "/indent": toOrder, "/plans": pending };
-  }, [metrics, subs]);
+    const h = ds.health;
+    const issues = h.unmappedClinics.length + h.unreadableLocations.length + h.failedPushes.filter((f) => f.failed > 0).length + ds.channels.filter((c) => !c.connected).length;
+    return { "/stock": urgent, "/indent": toOrder, "/plans": pending, "/health": issues };
+  }, [metrics, subs, ds]);
 }
 
 function Nav({ onNavigate }: { onNavigate?: () => void }) {
@@ -128,6 +130,39 @@ function RoleSwitch() {
   );
 }
 
+function SidebarFoot() {
+  const ds = useDataset();
+  return (
+    <div className="mt-auto border-t border-line p-3 text-[11.5px] leading-snug text-muted">
+      {ds.products.length} products · {ds.locations.length} Zoho locations
+      <br />
+      {ds.origin === "sample" ? "Sample data in Zoho’s shape" : "Stock from Zoho · sales from the CRMs"}
+    </div>
+  );
+}
+
+function DataBadge() {
+  const ds = useDataset();
+  const at = SYNC_FMT.format(new Date(ds.lastSyncedAt));
+  return ds.origin === "sample" ? (
+    <>
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-st-low-soft px-2.5 py-1 text-[12px] font-semibold text-[#7a4f00]" title="Every number is sample data in the real shape. The backend switches this to live data.">
+        <span className="h-1.5 w-1.5 rounded-full bg-st-low" aria-hidden />
+        Sample data · not live yet
+      </span>
+      <span className="hidden text-[12px] text-muted sm:inline">Sample as of {at}</span>
+    </>
+  ) : (
+    <>
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-st-healthy-soft px-2.5 py-1 text-[12px] font-semibold text-st-healthy">
+        <span className="h-1.5 w-1.5 rounded-full bg-st-healthy" aria-hidden />
+        Live
+      </span>
+      <span className="hidden text-[12px] text-muted sm:inline">Synced {at}</span>
+    </>
+  );
+}
+
 export function Shell({ children }: { children: ReactNode }) {
   // The panel's state lives in this browser, so it renders on the client only (server HTML is a loading line).
   const mounted = useSyncExternalStore(
@@ -149,11 +184,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <aside className="no-print sticky top-0 hidden h-screen w-[220px] shrink-0 flex-col border-r border-line bg-surface lg:flex">
         <Brand />
         <Nav />
-        <div className="mt-auto border-t border-line p-3 text-[11.5px] leading-snug text-muted">
-          {getDataset().products.length} products · {getDataset().locations.length} locations
-          <br />
-          Read from Zoho Inventory (sample)
-        </div>
+        <SidebarFoot />
       </aside>
 
       {menu ? (
@@ -176,11 +207,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <button onClick={() => setMenu(true)} aria-label="Open menu" className="rounded-md p-1.5 hover:bg-sunken lg:hidden">
             <Menu size={19} />
           </button>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-st-low-soft px-2.5 py-1 text-[12px] font-semibold text-[#7a4f00]" title="The backend is not built yet. Every number is sample data in Zoho's shape.">
-            <span className="h-1.5 w-1.5 rounded-full bg-st-low" aria-hidden />
-            Sample data · Zoho not connected yet
-          </span>
-          <span className="hidden text-[12px] text-muted sm:inline">Data as of {SYNC_TIME}</span>
+          <DataBadge />
           <div className="ml-auto">
             <RoleSwitch />
           </div>

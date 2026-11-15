@@ -6,7 +6,8 @@ import { useMemo, useState } from "react";
 import { ProjectionChart } from "@/components/charts";
 import { FilterBar } from "@/components/FilterBar";
 import { Button, Card, CardHeader, Note, PageHeader, Segmented, sortRows, SortTh, StatTile, StatusChip, channelLabel } from "@/components/ui";
-import { CHANNEL_IDS, channelRates, productMatches, totalSeries, unitValue } from "@/lib/data/engine";
+import { avgUnitValue, CHANNEL_IDS, channelRates, productMatches, seriesFor } from "@/lib/data/engine";
+import { connectedChannels } from "@/lib/data/model";
 import { useDataset, useFilters, useMetrics } from "@/lib/data/hooks";
 import { downloadCsv } from "@/lib/csv";
 import { IS_PREVIEW, PREVIEW_NO_DOWNLOAD } from "@/lib/platform";
@@ -23,14 +24,15 @@ export default function ProjectionsPage() {
   const openProduct = usePanel((s) => s.openProduct);
   const [measure, setMeasure] = useState<"units" | "value">("units");
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "p30", dir: "desc" });
-  const channels = (f.channels.length ? f.channels : CHANNEL_IDS) as ChannelId[];
+  const channels = (f.channels.length ? f.channels : connectedChannels(ds));
 
   const perProduct = useMemo(
     () =>
       ds.products.map((p, pi) => {
         const rates = channelRates(ds, settings, pi);
-        const factor = settings.useTrendFactor ? trendFactor(totalSeries(ds, pi), settings.trendCapPct) : 1;
-        return { p, pi, rates, factor };
+        const factor = settings.useTrendFactor ? trendFactor(seriesFor(ds, pi, () => true, "sold"), settings.trendCapPct) : 1;
+        const unit = Object.fromEntries(CHANNEL_IDS.map((c) => [c, avgUnitValue(ds, pi, c)])) as Record<ChannelId, number>;
+        return { p, pi, rates, factor, unit };
       }),
     [ds, settings],
   );
@@ -44,7 +46,7 @@ export default function ProjectionsPage() {
         const value: Record<number, number> = {};
         for (const h of PROJECTION_HORIZONS) {
           proj[h] = channels.reduce((a, c) => a + projection(x.rates[c], h, x.factor), 0);
-          value[h] = channels.reduce((a, c) => a + projection(x.rates[c], h, x.factor) * unitValue(x.p, c), 0);
+          value[h] = channels.reduce((a, c) => a + projection(x.rates[c], h, x.factor) * x.unit[c], 0);
         }
         return { ...x, rate, proj, value, m: metrics[x.pi]! };
       });
@@ -57,7 +59,7 @@ export default function ProjectionsPage() {
     for (const r of rows)
       for (const c of channels) {
         const u = projection(r.rates[c], h, r.factor);
-        byChannel[c] += measure === "units" ? u : u * unitValue(r.p, c);
+        byChannel[c] += measure === "units" ? u : u * r.unit[c];
       }
     return { horizon: h, byChannel };
   });
@@ -98,7 +100,7 @@ export default function ProjectionsPage() {
         <Card className="xl:col-span-2">
           <CardHeader
             title="Projected sales by channel"
-            sub={channels.length === CHANNEL_IDS.length ? "All channels" : channels.map((c) => channelLabel(c)).join(", ")}
+            sub={f.channels.length === 0 ? "All connected channels" : channels.map((c) => channelLabel(c)).join(", ")}
             right={<Segmented value={measure} onChange={setMeasure} label="Measure" options={[{ value: "units", label: "Units" }, { value: "value", label: "₹ Value" }]} />}
           />
           <ProjectionChart data={chartData} channels={channels} measure={measure} />

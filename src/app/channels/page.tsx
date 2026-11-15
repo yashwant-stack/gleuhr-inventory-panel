@@ -1,16 +1,17 @@
 "use client";
 
 import clsx from "clsx";
+import { Unplug } from "lucide-react";
 import { useMemo, useState } from "react";
 import { SalesTrendChart } from "@/components/charts";
 import { FilterBar } from "@/components/FilterBar";
 import { Card, CardHeader, ChannelDot, channelLabel, Delta, PageHeader, Segmented } from "@/components/ui";
-import { CHANNEL_IDS, dailyTotals, previousRange, projectionValueByChannel, salesByProduct, type ProductSales } from "@/lib/data/engine";
+import { dailyTotals, previousRange, projectionValueByChannel, salesByProduct, type ProductSales } from "@/lib/data/engine";
 import { useDataset, useFilters } from "@/lib/data/hooks";
-import { diffDays, fmtRange } from "@/lib/dates";
+import { connectedChannels } from "@/lib/data/model";
+import { diffDays, fmtDay, fmtRange } from "@/lib/dates";
 import type { ChannelId } from "@/lib/domain/types";
 import { fmtInt, fmtMoneyShort, pctChange } from "@/lib/format";
-import { D2C_CHANNELS } from "@/lib/mock/catalog";
 import { usePanel } from "@/lib/state/store";
 
 type ChannelPick = ChannelId | "d2c";
@@ -23,7 +24,9 @@ export default function ChannelsPage() {
   const [pick, setPick] = useState<ChannelPick>("clinic");
   const [measure, setMeasure] = useState<"value" | "units">("value");
 
-  // The cards ignore the channel filter (they ARE the channels); location/category/date still apply.
+  const connected = useMemo(() => connectedChannels(ds), [ds]);
+  const d2c = useMemo(() => connected.filter((c) => c !== "clinic"), [connected]);
+  // The cards ARE the channels, so the channel filter is ignored here; sold-at, category and date still apply.
   const f = useMemo(() => ({ ...base, channels: [] as ChannelId[] }), [base]);
   const sales = useMemo(() => salesByProduct(ds, f), [ds, f]);
   const prev = useMemo(() => salesByProduct(ds, f, previousRange(f.from, f.to)), [ds, f]);
@@ -31,13 +34,8 @@ export default function ChannelsPage() {
   const days = diffDays(f.to, f.from) + 1;
 
   const sum = (rows: ProductSales[], chs: ChannelId[], k: "value" | "qty") => rows.reduce((a, s) => a + chs.reduce((b, c) => b + s.byChannel[c][k], 0), 0);
-  const total = sum(sales, CHANNEL_IDS, "value");
-  const picked = useMemo<ChannelId[]>(() => (pick === "d2c" ? D2C_CHANNELS : [pick]), [pick]);
-
-  const cards: { id: ChannelPick; label: string; chs: ChannelId[] }[] = [
-    ...CHANNEL_IDS.map((c) => ({ id: c as ChannelPick, label: channelLabel(c), chs: [c] })),
-    { id: "d2c", label: "D2C total", chs: D2C_CHANNELS },
-  ];
+  const total = sum(sales, connected, "value");
+  const picked = useMemo<ChannelId[]>(() => (pick === "d2c" ? d2c : [pick]), [pick, d2c]);
 
   const pickedFilter = useMemo(() => ({ ...f, channels: picked }), [f, picked]);
   const points = useMemo(() => dailyTotals(ds, pickedFilter), [ds, pickedFilter]);
@@ -51,28 +49,34 @@ export default function ChannelsPage() {
   );
   const prevById = useMemo(() => new Map(prev.map((p) => [p.product.id, p])), [prev]);
 
-  const clinics = ds.sources.filter((s) => s.channel === "clinic" && (f.locations.length === 0 || f.locations.includes(s.locationId)));
-  const clinicRows = clinics
-    .map((src) => {
+  // Clinic-wise: each CRM clinic's own clinic sales (real sale values).
+  const clinicRows = ds.clinics
+    .filter((c) => c.active)
+    .map((c) => {
+      const srcIds = ds.sources.filter((s) => s.channel === "clinic" && s.clinicId === c.id).map((s) => s.id);
       let v = 0;
       let q = 0;
       let pv = 0;
       let best = { name: "—", q: 0 };
-      sales.forEach((s) => {
-        const sq = s.bySource[src.id] ?? 0;
+      for (const s of sales) {
+        const sq = srcIds.reduce((a, id) => a + (s.bySource[id] ?? 0), 0);
         q += sq;
-        v += sq * s.product.price;
+        v += srcIds.reduce((a, id) => a + (s.valueBySource[id] ?? 0), 0);
         if (sq > best.q) best = { name: s.product.name, q: sq };
-      });
-      prev.forEach((s) => (pv += (s.bySource[src.id] ?? 0) * s.product.price));
-      return { src, v, q, pv, best };
+      }
+      for (const s of prev) pv += srcIds.reduce((a, id) => a + (s.valueBySource[id] ?? 0), 0);
+      return { c, v, q, pv, best };
     })
+    .filter((r) => r.q || r.pv)
     .sort((a, b) => b.v - a.v);
   const clinicTotal = clinicRows.reduce((a, r) => a + r.v, 0);
 
+  const cards: { id: ChannelPick; label: string; chs: ChannelId[] }[] = [...connected.map((c) => ({ id: c as ChannelPick, label: channelLabel(c), chs: [c] })), { id: "d2c", label: "D2C total", chs: d2c }];
+  const notConnected = ds.channels.filter((c) => !c.connected);
+
   return (
     <div>
-      <PageHeader title="Channels" sub="Sales and stats for clinics, the online team, Amazon, Flipkart and the website (Shopify). Pick a channel to see its trend and top products." />
+      <PageHeader title="Channels" sub="Sales and stats per channel, from the clinic and online CRMs. Pick a channel to see its trend and top products." />
       <FilterBar channels={false} search={false} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
@@ -103,16 +107,30 @@ export default function ChannelsPage() {
             </button>
           );
         })}
+        {notConnected.map((c) => (
+          <div key={c.id} className="rounded-xl border border-dashed border-line-strong bg-sunken p-3.5" title={c.note}>
+            <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-muted">
+              <Unplug size={13} aria-hidden /> {c.label}
+            </div>
+            <div className="mt-1 text-[15px] font-semibold text-ink-2">Not connected</div>
+            <div className="mt-1 text-[11.5px] leading-snug text-muted">{c.note}</div>
+          </div>
+        ))}
       </div>
 
       <div className="mt-3 grid gap-3 xl:grid-cols-5">
         <Card className="xl:col-span-3">
           <CardHeader
             title={`${pick === "d2c" ? "D2C total" : channelLabel(pick)} over time`}
-            sub={`${fmtRange(f.from, f.to)}${pick === "d2c" ? " · Amazon, Flipkart, Shopify and the online team" : ""}`}
+            sub={`${fmtRange(f.from, f.to)}${pick === "d2c" ? ` · ${d2c.map((c) => channelLabel(c)).join(", ")}` : ""}`}
             right={<Segmented value={measure} onChange={setMeasure} label="Measure" options={[{ value: "value", label: "₹ Value" }, { value: "units", label: "Units" }]} />}
           />
           <SalesTrendChart points={points} measure={measure} channels={picked} height={230} />
+          {picked.map((c) => ds.channels.find((x) => x.id === c)).filter((c) => c?.dataFrom && c.dataFrom > f.from).map((c) => (
+            <p key={c!.id} className="mt-1 text-[11.5px] text-muted">
+              {c!.label} data starts {fmtDay(c!.dataFrom!)}.
+            </p>
+          ))}
         </Card>
         <Card className="xl:col-span-2" pad={false}>
           <div className="p-4 pb-2">
@@ -153,7 +171,7 @@ export default function ChannelsPage() {
 
       <Card className="mt-3" pad={false}>
         <div className="p-4 pb-2">
-          <CardHeader className="mb-0" title="Clinic-wise sales" sub={`Each clinic · ${fmtRange(f.from, f.to)} · ${days} days`} />
+          <CardHeader className="mb-0" title="Clinic-wise sales" sub={`Each clinic’s own sales (online pickups not included) · ${fmtRange(f.from, f.to)} · ${days} days`} />
         </div>
         <div className="overflow-x-auto scroll-thin">
           <table className="dtable">
@@ -170,8 +188,11 @@ export default function ChannelsPage() {
             </thead>
             <tbody>
               {clinicRows.map((r) => (
-                <tr key={r.src.id}>
-                  <td className="font-medium">{r.src.label}</td>
+                <tr key={r.c.id}>
+                  <td className="font-medium">
+                    {r.c.name}
+                    {r.c.zohoLocationId ? null : <span className="ml-1.5 rounded bg-st-low-soft px-1.5 text-[11px] font-semibold text-st-low">no Zoho location</span>}
+                  </td>
                   <td className="num font-medium">{fmtMoneyShort(r.v)}</td>
                   <td className="num">
                     <span className="inline-flex items-center gap-2">

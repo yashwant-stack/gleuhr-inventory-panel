@@ -94,7 +94,10 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
       activity: draft.activity[b.key] ?? "",
       budget: Number(draft.budget[b.key]) || 0,
     }));
-    submitPlan({ cycleId: cycle.id, part, by: role.id, submittedAt: new Date().toISOString(), lines, note: draft.note, version: (existing?.version ?? 0) + 1 });
+    // Sample data lives on its own calendar day; live data uses the real clock.
+    const now = new Date().toISOString();
+    const submittedAt = ds.origin === "sample" ? `${ds.today}${now.slice(10)}` : now;
+    submitPlan({ cycleId: cycle.id, part, by: role.id, submittedAt, lines, note: draft.note, version: (existing?.version ?? 0) + 1 });
     toast(`${meta.label} for ${cycle.label} submitted. Saved in this browser; the email to CBO${cycle.kind === "monthly" ? ", MD and Herman" : ""} goes out once email is connected.`);
     router.push("/plans");
   };

@@ -6,6 +6,7 @@ import { SalesTrendChart } from "@/components/charts";
 import { FilterBar } from "@/components/FilterBar";
 import { Card, CardHeader, ChannelDot, channelLabel, Delta, PageHeader, Segmented, StatTile, StatusChip, CHANNEL_COLOR } from "@/components/ui";
 import { CHANNEL_IDS, dailyTotals, previousRange, projectionValueByChannel, salesByProduct, urgency } from "@/lib/data/engine";
+import { connectedChannels } from "@/lib/data/model";
 import { useDataset, useFilters, useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
 import { cycleState, submissionStatus } from "@/lib/data/plans";
 import { diffDays, fmtDay, fmtRange } from "@/lib/dates";
@@ -25,7 +26,7 @@ export default function HomePage() {
   const subs = useSubmissions();
   const [measure, setMeasure] = useState<"value" | "units">("value");
 
-  const channels = (f.channels.length ? f.channels : CHANNEL_IDS) as ChannelId[];
+  const channels = (f.channels.length ? f.channels : connectedChannels(ds));
   const sales = useMemo(() => salesByProduct(ds, f), [ds, f]);
   const prev = useMemo(() => salesByProduct(ds, f, previousRange(f.from, f.to)), [ds, f]);
   const points = useMemo(() => dailyTotals(ds, f), [ds, f]);
@@ -99,6 +100,11 @@ export default function HomePage() {
               </li>
             ))}
           </ul>
+          {ds.channels.some((c) => !c.connected) ? (
+            <p className="mt-3 border-t border-line pt-2 text-[12px] text-muted">
+              {ds.channels.filter((c) => !c.connected).map((c) => c.label).join(" and ")}: not connected yet. <Link href="/health" className="text-coral hover:underline">Why?</Link>
+            </p>
+          ) : null}
         </Card>
       </div>
 

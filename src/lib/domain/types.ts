@@ -4,13 +4,18 @@
 
 export type ChannelId = "clinic" | "online_team" | "amazon" | "flipkart" | "website";
 
-export type LocationKind = "warehouse" | "clinic";
+export type LocationKind = "warehouse" | "clinic" | "darkstore";
 
+/** A Zoho Inventory location: the place stock physically sits. Zoho counts stock per location, never per channel. */
 export interface Location {
+  /** Zoho location_id. */
   id: string;
   name: string;
   kind: LocationKind;
-  city: string;
+  /** Zoho's primary location: an adjustment sent without a location lands here. */
+  isPrimary: boolean;
+  /** false when the Zoho login is not allowed to read this location (its stock is unknown, never 0). */
+  readable: boolean;
 }
 
 export interface Vendor {
@@ -37,6 +42,8 @@ export interface Product {
   packSize: number;
   /** First sale date (yyyy-mm-dd); products with < 30 days of history are flagged "New". */
   launchedOn: string;
+  /** Sold through the clinic or online CRM (false = a Zoho item the CRMs never sell, e.g. a consumable). */
+  soldInCrm: boolean;
 }
 
 export interface PurchaseOrder {
@@ -63,6 +70,10 @@ export interface FormulaSettings {
   gapFlagPct: number;
   transferHighDays: number;
   transferLowDays: number;
+  /** Days for stock sent from the warehouse to reach a clinic. */
+  replenishLeadDays: number;
+  /** How many days of a clinic's own usage each send-to-clinic covers. */
+  replenishCoverDays: number;
 }
 
 export const DEFAULT_FORMULA_SETTINGS: FormulaSettings = {
@@ -77,6 +88,8 @@ export const DEFAULT_FORMULA_SETTINGS: FormulaSettings = {
   gapFlagPct: 20,
   transferHighDays: 60,
   transferLowDays: 7,
+  replenishLeadDays: 3,
+  replenishCoverDays: 15,
 };
 
 export const LEAD_TIME_OPTIONS = [7, 15, 30, 60, 90] as const;

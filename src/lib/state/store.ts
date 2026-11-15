@@ -25,7 +25,13 @@ export const DATE_PRESETS: { id: Exclude<DatePreset, "custom">; label: string }[
   { id: "last_month", label: "Last month" },
 ];
 
-export function presetRange(p: Exclude<DatePreset, "custom">, today = TODAY): { from: string; to: string } {
+/** "Today" for date presets: the sample's day until live data says otherwise. */
+let panelToday = TODAY;
+export function setPanelToday(day: string): void {
+  panelToday = day;
+}
+
+export function presetRange(p: Exclude<DatePreset, "custom">, today = panelToday): { from: string; to: string } {
   switch (p) {
     case "today":
       return { from: today, to: today };
@@ -76,12 +82,16 @@ interface PanelState {
   from: string;
   to: string;
   channels: ChannelId[];
+  /** Sales pages: "clinic:<id>" / "loc:<zoho location>". */
+  points: string[];
+  /** Stock pages: Zoho location ids. */
   locations: string[];
   categories: string[];
   search: string;
   setPreset: (p: Exclude<DatePreset, "custom">) => void;
   setCustomRange: (from: string, to: string) => void;
   setChannels: (c: ChannelId[]) => void;
+  setPoints: (p: string[]) => void;
   setLocations: (l: string[]) => void;
   setCategories: (c: string[]) => void;
   setSearch: (s: string) => void;
@@ -171,16 +181,18 @@ export const usePanel = create<PanelState>()(
       from: initialRange.from,
       to: initialRange.to,
       channels: [],
+      points: [],
       locations: [],
       categories: [],
       search: "",
       setPreset: (p) => set({ preset: p, ...presetRange(p) }),
       setCustomRange: (from, to) => set({ preset: "custom", from: from <= to ? from : to, to: from <= to ? to : from }),
       setChannels: (channels) => set({ channels }),
+      setPoints: (points) => set({ points }),
       setLocations: (locations) => set({ locations }),
       setCategories: (categories) => set({ categories }),
       setSearch: (search) => set({ search }),
-      resetFilters: () => set({ preset: "30d", ...presetRange("30d"), channels: [], locations: [], categories: [], search: "" }),
+      resetFilters: () => set({ preset: "30d", ...presetRange("30d"), channels: [], points: [], locations: [], categories: [], search: "" }),
 
       role: "cbo",
       setRole: (role) => set({ role }),
@@ -224,13 +236,20 @@ export const usePanel = create<PanelState>()(
     }),
     {
       name: "gleuhr-inventory-panel",
-      version: 1,
+      version: 2,
+      // v1 stored old-style location ids; v2 starts its filters fresh.
+      migrate: (persisted, version) => {
+        const p = (persisted ?? {}) as { settings?: Partial<FormulaSettings> };
+        const settings = { ...DEFAULT_FORMULA_SETTINGS, ...(p.settings ?? {}) };
+        return (version < 2 ? { ...p, settings, locations: [], points: [] } : { ...p, settings }) as never;
+      },
       storage: createJSONStorage(() => safeStorage),
       partialize: (s) => ({
         preset: s.preset,
         from: s.from,
         to: s.to,
         channels: s.channels,
+        points: s.points,
         locations: s.locations,
         categories: s.categories,
         role: s.role,

@@ -119,6 +119,15 @@ export default function IndentPage() {
         }
       />
       <FilterBar date={false} channels={false} locations={false} search />
+      {ds.locations.some((l) => !l.readable) || !ds.purchaseOrdersAvailable ? (
+        <div className="mb-3">
+          <Note tone="warn">
+            {ds.locations.some((l) => !l.readable) ? `Stock at ${ds.locations.filter((l) => !l.readable).map((l) => l.name).join(", ")} can’t be read from Zoho yet, so it isn’t counted. ` : ""}
+            {!ds.purchaseOrdersAvailable ? "Purchase orders can’t be read yet, so stock on the way counts as 0. " : ""}
+            Quantities may be higher than needed until that is fixed (see Data health).
+          </Note>
+        </div>
+      ) : null}
 
       <Card>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3">

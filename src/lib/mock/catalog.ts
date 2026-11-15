@@ -3,44 +3,70 @@
 // Quantities, vendors, lead times and pack sizes are made up for the demo.
 
 import type { ChannelId, Location, Vendor } from "../domain/types";
+import type { CrmClinic } from "../data/model";
 
-export const CHANNELS: { id: ChannelId; label: string; short: string; priceFactor: number }[] = [
-  { id: "clinic", label: "Clinics", short: "Clinic", priceFactor: 1 },
-  { id: "online_team", label: "Online team", short: "Online team", priceFactor: 1 },
-  { id: "amazon", label: "Amazon", short: "Amazon", priceFactor: 0.85 },
-  { id: "flipkart", label: "Flipkart", short: "Flipkart", priceFactor: 0.85 },
-  { id: "website", label: "Website (Shopify)", short: "Website", priceFactor: 0.95 },
+/** Channel names and colours are fixed; whether a channel is connected comes from the data. */
+export const CHANNELS: { id: ChannelId; label: string; short: string }[] = [
+  { id: "clinic", label: "Clinics", short: "Clinic" },
+  { id: "online_team", label: "Online team", short: "Online team" },
+  { id: "website", label: "Website (Shopify)", short: "Website" },
+  { id: "amazon", label: "Amazon", short: "Amazon" },
+  { id: "flipkart", label: "Flipkart", short: "Flipkart" },
 ];
 
-export const D2C_CHANNELS: ChannelId[] = ["online_team", "amazon", "flipkart", "website"];
+/** Net price the business receives per channel, relative to the catalogue price (sample data only). */
+export const SAMPLE_PRICE_FACTOR: Record<ChannelId, number> = { clinic: 1, online_team: 1, website: 0.95, amazon: 0.85, flipkart: 0.85 };
 
-export const WAREHOUSE_ID = "loc-wh-mohali";
-
-export const LOCATIONS: Location[] = [
-  { id: WAREHOUSE_ID, name: "Mohali warehouse", kind: "warehouse", city: "Mohali" },
-  { id: "loc-chandigarh", name: "Chandigarh", kind: "clinic", city: "Chandigarh" },
-  { id: "loc-ludhiana", name: "Ludhiana", kind: "clinic", city: "Ludhiana" },
-  { id: "loc-jalandhar", name: "Jalandhar", kind: "clinic", city: "Jalandhar" },
-  { id: "loc-amritsar", name: "Amritsar", kind: "clinic", city: "Amritsar" },
-  { id: "loc-bathinda", name: "Bathinda", kind: "clinic", city: "Bathinda" },
-  { id: "loc-karnal", name: "Karnal", kind: "clinic", city: "Karnal" },
-  { id: "loc-delhi", name: "Delhi", kind: "clinic", city: "Delhi" },
-  { id: "loc-gurugram", name: "Gurugram", kind: "clinic", city: "Gurugram" },
-  { id: "loc-delhi92", name: "Delhi 92", kind: "clinic", city: "Delhi" },
+// The 16 Zoho locations as read on 14 Nov 2026 (ids shortened for the sample).
+// readable=false: the Zoho login was refused ("insufficient location permissions").
+export const SAMPLE_LOCATIONS: Location[] = [
+  { id: "z-mohali", name: "Mohali - Warehouse", kind: "warehouse", isPrimary: true, readable: true },
+  { id: "z-chandigarh", name: "Chandigarh", kind: "clinic", isPrimary: false, readable: true },
+  { id: "z-ludhiana", name: "Ludhiana", kind: "clinic", isPrimary: false, readable: true },
+  { id: "z-jalandhar", name: "Jalandhar", kind: "clinic", isPrimary: false, readable: true },
+  { id: "z-amritsar", name: "Amritsar", kind: "clinic", isPrimary: false, readable: true },
+  { id: "z-bathinda", name: "Bathinda", kind: "clinic", isPrimary: false, readable: true },
+  { id: "z-karnal", name: "Karnal", kind: "clinic", isPrimary: false, readable: true },
+  { id: "z-delhi", name: "Delhi", kind: "clinic", isPrimary: false, readable: true },
+  { id: "z-delhi92", name: "Delhi 92", kind: "clinic", isPrimary: false, readable: true },
+  { id: "z-gurugram", name: "Gurugram", kind: "clinic", isPrimary: false, readable: true },
+  { id: "z-jaipur", name: "Jaipur", kind: "clinic", isPrimary: false, readable: true },
+  { id: "z-ahmedabad", name: "Ahmedabad", kind: "clinic", isPrimary: false, readable: false },
+  { id: "z-mumbai", name: "Mumbai", kind: "clinic", isPrimary: false, readable: false },
+  { id: "z-pune", name: "Pune", kind: "clinic", isPrimary: false, readable: false },
+  { id: "z-delhi-ds", name: "Delhi - DARKSTORE", kind: "darkstore", isPrimary: false, readable: false },
+  { id: "z-mumbai-ds", name: "Mumbai - Darkstore", kind: "darkstore", isPrimary: false, readable: false },
 ];
 
-/** Relative clinic size (share of clinic sales). */
+export const PRIMARY_LOCATION_ID = "z-mohali";
+export const DELHI_LOCATION_ID = "z-delhi";
+
+// CRM clinics and the Zoho location each one posts to, as in production on 14 Nov 2026.
+export const SAMPLE_CLINICS: CrmClinic[] = [
+  { id: "1", name: "Chandigarh", active: true, zohoLocationId: "z-chandigarh" },
+  { id: "2", name: "Ludhiana", active: true, zohoLocationId: "z-ludhiana" },
+  { id: "3", name: "Jalandhar", active: true, zohoLocationId: "z-jalandhar" },
+  { id: "4", name: "Amritsar", active: true, zohoLocationId: "z-amritsar" },
+  { id: "5", name: "Bathinda", active: true, zohoLocationId: "z-bathinda" },
+  { id: "6", name: "Karnal", active: true, zohoLocationId: "z-karnal" },
+  { id: "7", name: "Delhi", active: true, zohoLocationId: "z-delhi" },
+  { id: "8", name: "Gurgaon", active: true, zohoLocationId: "z-gurugram" },
+  { id: "9", name: "Delhi West", active: false, zohoLocationId: "z-delhi92" },
+  { id: "10", name: "Delhi East", active: true, zohoLocationId: null },
+  { id: "11", name: "Jaipur", active: true, zohoLocationId: "z-jaipur" },
+  { id: "42", name: "Ahmedabad", active: true, zohoLocationId: "z-ahmedabad" },
+  { id: "45", name: "Mumbai", active: true, zohoLocationId: "z-mumbai" },
+  { id: "46", name: "Pune", active: true, zohoLocationId: null },
+];
+
+/** Relative clinic size (share of clinic sales), roughly as in the last 30 days of real data. */
 export const CLINIC_WEIGHT: Record<string, number> = {
-  "loc-chandigarh": 0.2,
-  "loc-ludhiana": 0.15,
-  "loc-jalandhar": 0.1,
-  "loc-amritsar": 0.1,
-  "loc-bathinda": 0.07,
-  "loc-karnal": 0.07,
-  "loc-delhi": 0.12,
-  "loc-gurugram": 0.12,
-  "loc-delhi92": 0.07,
+  "1": 0.2, "2": 0.1, "3": 0.1, "4": 0.1, "5": 0.05, "6": 0.08, "7": 0.09, "8": 0.04,
+  "10": 0.05, "11": 0.03, "42": 0.03, "45": 0.06, "46": 0.02,
 };
+
+/** Clinics where online-team orders are picked up or sent by Rapido (stock leaves the clinic). */
+export const PICKUP_CLINICS = ["1", "2", "3", "4", "5", "6", "8"];
 
 export const VENDORS: Vendor[] = [
   { id: "v-a", name: "Vendor A · Serums & creams", leadTimeDays: 15 },
@@ -109,14 +135,14 @@ export const CATALOG: CatalogEntry[] = [
   { sku: "GL-MSGCREM", name: "G Marine Soothing Aqua Massage Cream", category: "Creams & Moisturizers", price: 10500, vendorId: "v-a", packSize: 2, baseRate: 0.6 },
 ];
 
-/** Share of each product category's sales by channel (clinic, online team, amazon, flipkart, website). */
-export const CATEGORY_MIX: Record<string, [number, number, number, number, number]> = {
-  Serums: [0.46, 0.18, 0.16, 0.06, 0.14],
-  "Creams & Moisturizers": [0.5, 0.16, 0.14, 0.06, 0.14],
-  "Cleansers & Toners": [0.36, 0.14, 0.24, 0.1, 0.16],
-  "Sun Care": [0.34, 0.12, 0.28, 0.1, 0.16],
-  "Hair Care": [0.4, 0.2, 0.18, 0.08, 0.14],
-  Wellness: [0.22, 0.34, 0.2, 0.08, 0.16],
-  "Treatment Kits": [0.72, 0.14, 0.04, 0.02, 0.08],
-  Makeup: [0.18, 0.1, 0.36, 0.18, 0.18],
+/** Share of each product category's sales by channel: clinic, online team, website. */
+export const CATEGORY_MIX: Record<string, [number, number, number]> = {
+  Serums: [0.52, 0.34, 0.14],
+  "Creams & Moisturizers": [0.56, 0.3, 0.14],
+  "Cleansers & Toners": [0.44, 0.38, 0.18],
+  "Sun Care": [0.42, 0.38, 0.2],
+  "Hair Care": [0.46, 0.38, 0.16],
+  Wellness: [0.26, 0.54, 0.2],
+  "Treatment Kits": [0.78, 0.16, 0.06],
+  Makeup: [0.3, 0.4, 0.3],
 };

@@ -160,6 +160,12 @@ export default function SettingsPage() {
           <Field label="Clinic transfer: receiver has less than" help="Days of cover at the clinic that needs stock">
             <NumInput value={f.transferLowDays} onChange={(n) => set("transferLowDays", n)} disabled={ro} suffix="days" max={60} />
           </Field>
+          <Field label="Send to clinics: days to arrive" help="Mohali → clinic delivery time">
+            <NumInput value={f.replenishLeadDays} onChange={(n) => set("replenishLeadDays", n)} disabled={ro} suffix="days" min={1} max={30} />
+          </Field>
+          <Field label="Send to clinics: days each send covers" help="Of the clinic’s own usage">
+            <NumInput value={f.replenishCoverDays} onChange={(n) => set("replenishCoverDays", n)} disabled={ro} suffix="days" min={1} max={90} />
+          </Field>
         </div>
       </Card>
 

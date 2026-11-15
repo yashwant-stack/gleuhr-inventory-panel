@@ -13,6 +13,7 @@ export const ROUTES: { path: string; hash: string }[] = [
   { path: "/plans/form", hash: "plan-form" },
   { path: "/reports", hash: "reports" },
   { path: "/alerts", hash: "alerts" },
+  { path: "/health", hash: "data-health" },
   // "settings" is reserved by claude.ai, so the Settings page uses another name.
   { path: "/settings", hash: "panel-settings" },
 ];
