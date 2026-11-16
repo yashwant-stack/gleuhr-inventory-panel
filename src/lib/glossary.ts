@@ -1,0 +1,185 @@
+// What every label on the panel means, in plain words: the hover tooltips read from here
+// (src/components/Tooltips.tsx). Keys are matched case-insensitively against the label's text.
+// A label that is not here simply has no tooltip.
+
+const G: Record<string, string> = {
+  // ── menu ──
+  "nav:home": "Where sales and stock stand today, the products that need action, and the forecast.",
+  "nav:sales": "Product-wise sales for any date range, split by channel and sales point.",
+  "nav:channels": "Each channel's sales, trend and top products, plus clinic-wise sales.",
+  "nav:projections": "What each product is expected to sell in the next 7, 15, 30, 60 and 90 days.",
+  "nav:stock health": "Current stock per product and location, days of cover and status. The number counts products that are critical or low.",
+  "nav:auto indent": "What to order now and how much. The number counts products to order.",
+  "nav:plans": "Marketing and sales plans, who has submitted, and plan vs actual.",
+  "nav:reports": "The consolidated projection report for the CBO and the report chain.",
+  "nav:alerts": "Every automatic email and WhatsApp message: what goes out, when, and to whom.",
+  "nav:data health": "Can you trust the numbers? What reaches the panel, what doesn't, and why. The number counts open issues.",
+  "nav:settings": "Thresholds and formulas the whole panel uses.",
+
+  // ── filters ──
+  "filter:channel": "Show only some sales channels: clinics, online team, website, Amazon, Flipkart.",
+  "filter:sold at": "Show only sales made at some places: a clinic, or a Zoho location for online dispatch.",
+  "filter:location": "Show stock at some Zoho locations only (the warehouse or a clinic).",
+  "filter:category": "Show only some product categories.",
+  "filter:viewing as": "Preview the panel as each role sees it. It is not a login: everyone with the key sees the same data.",
+
+  // ── channels ──
+  clinics: "Products sold at the clinic counter, from the clinic CRM's bills.",
+  clinic: "Products sold at the clinic counter, from the clinic CRM's bills.",
+  "online team": "Orders taken by the online team in the online CRM (WhatsApp, calls), shipped from the warehouse or picked up at a clinic.",
+  "website (shopify)": "Orders placed on the Shopify website; they arrive in the online CRM as online orders.",
+  website: "Orders placed on the Shopify website; they arrive in the online CRM as online orders.",
+  amazon: "Not connected yet: Amazon orders are not in the CRMs, and how they are recorded is still to be confirmed.",
+  flipkart: "Not connected yet: Flipkart orders are not in the CRMs, and how they are recorded is still to be confirmed.",
+  channel: "Where the sale happened: clinics, online team, website (Shopify), Amazon or Flipkart.",
+  "d2c": "Direct to customer: online team + website (+ Amazon and Flipkart once connected).",
+
+  // ── stock status ──
+  critical: "Stock runs out before a new order could arrive (days of cover is less than the lead time). Order now.",
+  low: "Stock is below the reorder point (sales during the lead time + 7 safety days). Order soon.",
+  healthy: "Enough stock for the lead time and safety days, and not more than the overstock limit.",
+  overstock: "More than the overstock limit (90 days of sales by default) is on the shelf: money stuck in stock.",
+  "no sales": "Nothing sold in the last 90 days, so there is no daily rate to plan with.",
+  new: "Less than 30 days of sales history: its daily rate is less certain.",
+  unknown: "Zoho does not let the panel read this location's stock, so it is unknown (never counted as 0).",
+
+  // ── columns ──
+  product: "The product as Zoho names it. Click a row to see how its numbers are worked out.",
+  sku: "The product's code (SKU).",
+  category: "The product's category: from Zoho, or from the online CRM when Zoho has none.",
+  units: "Units sold in the period, after returns and cancelled bills.",
+  value: "Sales value in ₹ for the period: what customers paid for the products after discounts, offers and round-off, GST included. Delivery charges are not included.",
+  change: "Change vs the period of the same length just before. Shows 'incomplete' when some sales points were not yet recording then.",
+  "vs previous 30 days": "Change vs the 30 days before.",
+  "per day": "Units sold in the period divided by its days.",
+  "sells / day": "Daily sales rate: 50% of the last 7 days' average + 30% of the last 30 days' + 20% of the last 90 days', counting each sales point only from the day it started recording, and skipping days the product was out of stock.",
+  "uses / day": "Daily usage at this location: sales of every channel that takes stock from here, plus free samples and exchanges.",
+  trend: "Whether sales are speeding up or slowing down: last 7 days vs last 30 days.",
+  stock: "Stock now, from Zoho: the warehouse plus every clinic location the Zoho login may read.",
+  "stock today": "Stock now, from Zoho, across the readable locations.",
+  "zoho stock": "Stock as Zoho reports it at this location.",
+  warehouse: "Stock at the primary Zoho location (Mohali warehouse), which ships online orders and refills clinics.",
+  clinics_stock: "Stock across the clinic locations.",
+  total: "Warehouse + all readable clinic locations.",
+  "on the way": "Units ordered from vendors but not yet received (open purchase orders in Zoho). Unknown until the Zoho key may read purchase orders.",
+  "days of cover": "How many days the stock lasts at today's daily rate: stock ÷ sells per day.",
+  "days left": "How many days the stock lasts at today's daily rate: stock ÷ sells per day.",
+  "runs out": "The day stock reaches zero at today's daily rate.",
+  "lead time": "Days from placing an order with the vendor to receiving it. Zoho has no vendor lead times, so the default from Settings is used unless changed.",
+  status: "Critical, Low, Healthy, Overstock or No sales, from days of cover vs lead time, safety days and the overstock limit.",
+  excess: "Units above the overstock limit (90 days of sales by default).",
+  "reorder point": "Order when stock falls to this: daily rate × (lead time + 7 safety days).",
+  "order now": "Suggested order: daily rate × (lead time + cover days) + safety stock − stock − stock on the way, rounded up to the pack size.",
+  "order qty": "Suggested order: daily rate × (lead time + cover days) + safety stock − stock − stock on the way, rounded up to the pack size.",
+  order: "Suggested order quantity.",
+  "order by": "The last day to place the order so it arrives before stock runs out.",
+  arrives: "When the order would arrive if placed today: today + lead time.",
+  vendor: "The supplier, from Zoho. 'Vendor not set in Zoho' when Zoho has none.",
+  "90-day value": "Expected sales value over the next 90 days at today's rate.",
+  "last 30 days": "What happened in the last 30 days.",
+  "last 30 days (units)": "Units sold in the last 30 days.",
+  share: "This row's share of the total.",
+  "share of clinics": "This clinic's share of all clinic sales in the period.",
+  "best seller": "The product this clinic sold most units of in the period.",
+  "channel split": "How the product's sales split across channels.",
+  "#": "Rank by sales value.",
+  location: "A Zoho location (the warehouse, a clinic or a darkstore).",
+  readable: "Whether the Zoho login may read this location's stock.",
+  "taken by": "The channels whose sales take stock out of this location.",
+  "send to": "The clinic that should receive stock from the warehouse.",
+  send: "Units to send so the clinic holds its target days of stock.",
+  has: "Stock the clinic holds now.",
+  clinic_row: "A clinic in the CRM.",
+  "sales from": "Where the panel reads this channel's sales.",
+  "data from": "The first day this channel's sales were recorded in the CRMs.",
+  "stock taken from (zoho location)": "The Zoho locations this channel's sales take stock out of.",
+  refused: "Stock changes the CRMs sent to Zoho that Zoho refused (last 30 days). Zoho's stock at that location is too high by these.",
+  since: "The first refusal in the last 30 days.",
+  latest: "The latest refusal.",
+  why: "The reason, in plain words.",
+  "crm product": "A product in the clinic / online CRM.",
+  "sold, 90 days": "Units sold in the last 90 days (before returns).",
+  "last sale": "The last day it was sold.",
+  message: "The automatic message.",
+  "when · next": "When it goes out, and the next time.",
+  "to · cc": "Who receives it, and who is copied.",
+  via: "Email or WhatsApp.",
+  when: "When it was sent.",
+  to: "Who it was sent to.",
+  summary: "What it said.",
+  "plan part": "The part of the plan: marketing, sales, D2C or clinic-wise.",
+  "filled by": "The person who fills this part.",
+  submitted: "When it was submitted.",
+  "planned units": "Units the plan expects to sell.",
+  "system projection": "What the panel expects at today's trend, before any plan.",
+  "system said": "What the panel expected at the time.",
+  "system said (so far)": "What the panel expected for the days so far.",
+  system: "What the panel expects at today's trend.",
+  "expected units": "Units the planner expects.",
+  "budget (₹)": "Planned marketing spend.",
+  gap: "Plan vs the panel's projection. Flagged when more than the gap limit in Settings (±20% by default).",
+  "gap vs system": "Plan vs the panel's projection.",
+  "sales plan (so far)": "The sales plan for the days so far.",
+  actual: "What actually sold.",
+  "vs plan": "Actual vs plan.",
+  achieved: "Share of the plan achieved so far.",
+  "sales plan": "Units in the sales plan.",
+  "marketing expects": "Units the marketing plan expects.",
+  "d2c / clinic team": "Units the D2C and clinic teams planned.",
+  "planned demand": "Demand in the plan for the period.",
+  "stock at period start": "Stock expected at the start of the plan period.",
+  "short by": "Units missing to meet the planned demand.",
+  today: "As of today.",
+  "closer forecast": "Which forecast was closer to what actually sold.",
+
+  // ── tiles ──
+  "sales channels connected": "Channels whose sales reach the panel. Amazon and Flipkart are not connected yet.",
+  "zoho locations readable": "Zoho locations whose stock the Zoho login may read.",
+  "stock changes zoho refused": "CRM stock changes Zoho refused in the last 30 days: Zoho's stock is off by these.",
+  "clinics not linked to zoho": "Clinics without a Zoho location: Zoho books their stock changes on the warehouse instead.",
+  "products to order": "Products whose suggested order is above zero.",
+  "order value at cost": "Suggested orders × cost price (Zoho's purchase price, or 30% of the selling price where Zoho's is a ₹10 placeholder).",
+  approved: "Order lines approved by the CBO.",
+  sales: "Sales value in ₹ for the period, GST included, after discounts and returns.",
+  "sales value": "Sales value in ₹ for the period, GST included, after discounts and returns.",
+  "units sold": "Units sold in the period after returns, and the daily average.",
+  "critical + low products": "Products that are Critical (run out before an order could arrive) or Low (below the reorder point).",
+  "overstock products": "Products with more than the overstock limit on the shelf, and that stock's value at cost.",
+  "suggested order now": "Value at cost of everything the panel suggests ordering today.",
+  "team plan": "What the teams' plans add up to.",
+  "gaps over": "Plan lines more than the gap limit away from the panel's projection.",
+  "stock shortfalls": "Products whose stock will not cover the planned demand.",
+  "all clinics": "Stock across every readable clinic location.",
+  "stock value": "Stock × cost price.",
+  "products sold": "Products with at least one unit sold in the period.",
+  "average order line": "Average value of one product line sold.",
+  "next 7 days": "Expected sales value over the next 7 days at today's trend.",
+  "next 15 days": "Expected sales value over the next 15 days at today's trend.",
+  "next 30 days": "Expected sales value over the next 30 days at today's trend.",
+
+  // ── badges ──
+  live: "Real data: stock from Zoho, sales from the CRMs, at the last sync.",
+  "live data · snapshot": "Real data from the last sync, saved into this page. It does not update by itself.",
+  "sample data · not live yet": "Every number is sample data in the real shape.",
+  incomplete: "Some of these sales points began recording in the CRM during the earlier period, so a change would mostly show them joining, not growth.",
+  "earlier data incomplete": "Some of these sales points began recording in the CRM during the earlier period, so a change would mostly show them joining, not growth.",
+  "no earlier data": "Nothing was recorded in the earlier period to compare with.",
+};
+
+const norm = (s: string) =>
+  s
+    .replace(/[↑↓↕▲▼]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+/** The description for a label, or null. `kind` picks the menu / filter entries. */
+export function describe(label: string, kind?: "nav" | "filter"): string | null {
+  const t = norm(label);
+  if (!t || t.length > 60) return null;
+  if (kind) return G[`${kind}:${t}`] ?? null;
+  if (G[t]) return G[t]!;
+  // "Sales · 18 Oct – 16 Nov", "Gaps over ±20%": the part before the date or number
+  const head = t.split(" · ")[0]!.replace(/[±\d%₹.,·\s]+$/g, "").trim();
+  return G[head] ?? null;
+}

@@ -21,6 +21,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { IS_SNAPSHOT } from "@/lib/platform";
+import { Tooltips } from "./Tooltips";
 import { useDataset, useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
 import { cycleState } from "@/lib/data/plans";
 import { CYCLES } from "@/lib/mock/plans";
@@ -182,6 +183,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const allowed = canOpen(path, role.access);
   return (
     <div className="flex min-h-screen">
+      <Tooltips />
       <aside className="no-print sticky top-0 hidden h-screen w-[220px] shrink-0 flex-col border-r border-line bg-surface lg:flex">
         <Brand />
         <Nav />

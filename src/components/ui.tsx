@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import { describe } from "@/lib/glossary";
 import { AlertOctagon, AlertTriangle, CheckCircle2, CircleSlash, Layers, Info } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -152,9 +153,11 @@ export function StatTile({
       {sub ? <div className="mt-0.5 text-[12px] text-ink-2">{sub}</div> : null}
     </>
   );
-  if (href) return <Link href={href} className={cls}>{body}</Link>;
-  if (onClick) return <button onClick={onClick} className={cls}>{body}</button>;
-  return <div className={cls}>{body}</div>;
+  // the whole tile explains itself on hover (src/lib/glossary.ts)
+  const tip = (typeof label === "string" ? describe(label) : null) ?? undefined;
+  if (href) return <Link href={href} className={cls} data-tip={tip}>{body}</Link>;
+  if (onClick) return <button onClick={onClick} className={cls} data-tip={tip}>{body}</button>;
+  return <div className={cls} data-tip={tip}>{body}</div>;
 }
 
 const INCOMPLETE_WHY = "Some of these sales points began recording in the CRM during the earlier period, so a change would mostly show them joining, not growth.";
