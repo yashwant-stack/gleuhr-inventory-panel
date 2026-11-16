@@ -113,6 +113,17 @@ About **190 Zoho calls a day** in total, against the panel's own ceiling of 600,
 
 ---
 
+## Public live-snapshot link (until the panel is hosted)
+
+The running panel has no public address while it lives in a session container. The live data can still be shared as a claude.ai page that holds it **encrypted** (AES-256-GCM, key derived from `PANEL_ACCESS_KEY` with PBKDF2, 600,000 rounds): the page shows only a key prompt until the key is typed, and decrypts in the viewer's browser. It is a snapshot of the last sync, not a running server. To refresh it:
+
+1. Sync, then fetch the data with the access key: `/api/cron/sync?run=frequent`, then `/api/unlock` and `/api/dataset` → `.data/dataset.json`.
+2. `node preview/encrypt-snapshot.mjs .data/dataset.json .data/snapshot.json` (reads `PANEL_ACCESS_KEY`).
+3. `SNAPSHOT_FILE=.data/snapshot.json npm run build:preview` → `preview-dist/gleuhr-inventory-panel-live.html`.
+4. Republish that file to the same link.
+
+Changing `PANEL_ACCESS_KEY` and republishing locks out everyone holding the old key.
+
 ## 3 · Not built yet (next stage)
 
 - **Personal logins with roles** (CBO admin; MD and Herman view; MH, SH, the online team and Manisha plan). Until then, everyone with the key sees the same panel, and the "Viewing as" switch is a preview of each role, not security.
