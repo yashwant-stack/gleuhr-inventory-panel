@@ -14,7 +14,7 @@ Until the switch-on steps in §2 are done, the panel runs on the built-in sample
 |---|---|---|
 | The panel's tables | `supabase/migrations/20261115000001_panel_init.sql` | 17 tables in the panel's **own** Supabase project (not the CRM's). Row-level security is on everywhere, with no policies: only the server reads or writes. It is safe to run twice. |
 | Zoho reader | `src/server/zoho.ts` | Read-only. It caches one access token for an hour in the database and keeps its own call ceilings (10 a minute, 600 a day; both are settings). A full minute makes it **wait** for the next one. It stops on the daily ceiling, on the run's time budget, or on a 429 from Zoho. |
-| CRM reader | `src/server/crm.ts` | Read-only SQL on 6 CRM tables. It works out each stock movement's channel (clinic / online team / website) and kind (sale, return, free, exchange, stock received, loss), each in **IST days**, with the value from the sale line after its discount. The query was checked on production for 13 Nov (clinics 442 units ₹6.99 L, online team 520 units ₹8.20 L, website 92 units ₹1.52 L). |
+| CRM reader | `src/server/crm.ts` | Read-only SQL on 9 CRM tables. It works out each stock movement's channel (clinic / online team / website) and kind (sale, return, free, exchange, loss) in **IST days**, and its value: what the customer paid for the products, GST included (§1 rules). Checked on production for the 30 days to 16 Nov: online matches the CRM's own product totals to ₹100 in ₹2.36 crore; all 4,128 live clinic bills match to the rupee; all 356 cancelled bills net to zero. |
 | The sync | `src/server/sync.ts` | Six jobs, each logged in `sync_runs`. Details below. |
 | The data feed | `src/server/dataset.ts`, `src/app/api/dataset` | Builds what the screens show from the panel's tables. It refuses (in plain words) until the first sync has reached every location. |
 | Scheduled runs | `vercel.json`, `src/app/api/cron/sync` | Every 2 hours at :17 past (UTC), plus a daily run at 01:41 UTC (07:11 IST). Each needs `Authorization: Bearer <CRON_SECRET>`. |
@@ -45,12 +45,19 @@ About **190 Zoho calls a day** in total, against the panel's own ceiling of 600,
 - **History starts when the product was added to the CRM**, not at its first sale, so a slow seller isn't treated as "new" with an inflated rate.
 - **Stock-out days** are left out of the rate only when that day's stock photo shows nothing at any readable location **and** nothing sold that day. Days before the photos began are never dropped.
 - **A channel's data starts** at its first recorded sale of any product. Amazon and Flipkart show "not connected" with the reason.
-- **Price** is the CRM's price. **Cost** is Zoho's purchase price, or 30% of the price when Zoho's is a ₹10 placeholder (the 30% is a setting).
+- **Sales value never comes from Zoho.** Zoho is read for stock only. Every sale's value comes from the CRM bill or order it belongs to, as the customer paid it, GST included:
+  - **Clinic:** each bill line's price after its discount, scaled to the bill's real total. Whole-bill offers (buy-one-get-one, quantity tiers) and round-off sit on the bill, not on its lines. Example: 2 serums whose lines say ₹2,000, billed ₹1,500, count as ₹1,500.
+  - **Online:** each line's price after its discount, less buy-one-get-one free units and round-off (the CRM's own product-total formula). The delivery charge (COD fee, shipping) is left out, because it isn't product sales.
+- **A cancelled or edited clinic bill puts its stock back.** The CRM records that as an "adjustment" on the bill, and the panel takes it off sales; it is never stock received. On a free bill it takes a free sample back instead. In the 30 days to 16 Nov this was 2,384 of 18,656 clinic units (13%).
+- **Price** (for forecasts in ₹) is the CRM's price. **Cost** is Zoho's purchase price, or 30% of the price when Zoho's is a ₹10 placeholder (the 30% is a setting).
 
 ### How it was verified (15 Nov 2026)
 
 - **41 automated tests.** The 7 end-to-end tests run the real migration on an in-memory Postgres (PGlite), a fake CRM with production's table shapes, and a fake Zoho. They cover: full sync → data feed → wire format → the screens' maths; ceilings; pacing; 429; time budget; stalest-first; re-reads.
 - With `PG_TEST_URL` set, the same end-to-end tests also run on a real PostgreSQL 16 through **postgres.js, the driver production uses**. That run found a real bug the in-memory database hid: JSON batches arrived double-encoded, so every sync write failed. It is now fixed (`$1::text::jsonb`, see `src/server/db.ts`). The test was checked to fail when the bug is put back.
+- **Sales value against the CRMs' own totals** (production, read-only, the 30 days to 16 Nov). This check found the "adjustment" rule above: the first version counted cancelled and edited-down clinic sales as sold.
+  - Online: the panel's product value was ₹2,35,88,336; the CRM's own product total (`app.online_order_lines_total`) was ₹2,35,88,236.
+  - Clinic: all 4,128 live bills match their bill totals to the rupee, and all 356 cancelled bills net to zero units and ₹0.
 - **The live path, end to end:**
   - A `next start` build in live mode ran against local Postgres + fake Zoho: the scheduled runs, the access key, the data feed.
   - `e2e/live-flow.cjs` (18 browser checks) passed: the locked screen, a wrong key, the live badge, Mumbai unknown on Stock, left-out products and sync status on Data health, the cookie hidden from scripts.
@@ -71,7 +78,7 @@ About **190 Zoho calls a day** in total, against the panel's own ceiling of 600,
 1. **The panel's own Supabase project.** Create it, or give me the connector to one, and I apply `supabase/migrations/20261115000001_panel_init.sql`. Its connection string (Transaction pooler, port 6543) becomes `PANEL_DATABASE_URL`.
 
 2. **A read-only login on the CRM database**, made by the clinic CRM team through their own process (their repo owns that database's changes, and production changes need the founder's word):
-   - It may only `SELECT` six tables: `clinics`, `retail_products`, `stock_movements`, `online_shopify_orders`, `product_sale_lines`, `online_order_lines`.
+   - It may only `SELECT` nine tables: `clinics`, `retail_products`, `stock_movements`, `online_shopify_orders`, `product_sales`, `product_sale_lines`, `online_orders`, `online_order_lines`, `online_offers`.
    - Those tables have row-level security, so the login must be able to read through it. The clinic team decides how (a policy for this login, or `BYPASSRLS`).
    - Its connection string becomes `CRM_DATABASE_URL`.
    - **Never the CRM's main login.**

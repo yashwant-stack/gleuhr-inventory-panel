@@ -32,19 +32,31 @@ function wrap(pg: PGlite): Db {
 
 
 // ── fake CRM database (production table shapes, only the columns the panel reads) ──
+// Its stories follow the CRMs' real behaviour (read from their code and checked on production, 16 Nov 2026):
+// an "adjustment" is a clinic bill edited down or cancelled; offers and round-off sit on the bill / order total;
+// an online order's total also holds the delivery charge, which is not product sales.
 const CRM_SCHEMA = `
-create type stock_reason as enum ('sale','online_sale','online_rto_in','online_cancel_in','online_pack_exception','online_pack_undo',
-  'online_pack_cancel','complimentary','exchange_in','exchange_out','adjustment','online_rto_missing');
+create type stock_move_reason as enum ('sale','online_sale','online_rto_in','online_cancel_in','online_pack_exception','online_pack_undo',
+  'online_pack_cancel','complimentary','exchange_in','exchange_out','adjustment','online_rto_missing','online_rto_damaged');
 create type sync_state as enum ('pending','synced','failed');
+create type online_disc_mode as enum ('auto','custom','none');
+create type online_offer_type as enum ('pct','bogo','tiered');
+create type online_bogo_type as enum ('b1g1','b2g1');
 create table public.clinics (id bigint primary key, name text not null, active boolean not null default true, zoho_location_id text);
 create table public.retail_products (id bigint primary key, sku text, name text not null, zoho_item_id text, price numeric not null default 0,
   active boolean not null default true, created_at timestamptz not null default '2026-07-09T10:00:00+05:30');
 create table public.stock_movements (id bigserial primary key, product_id bigint not null, clinic_id bigint not null, qty integer not null,
-  reason stock_reason not null, online_order_id bigint, product_sale_id bigint, created_at timestamptz not null,
+  reason stock_move_reason not null, online_order_id bigint, product_sale_id bigint, created_at timestamptz not null,
   sync_status sync_state not null default 'synced', sync_error text);
 create table public.online_shopify_orders (id bigserial primary key, order_id bigint);
-create table public.product_sale_lines (id bigserial primary key, product_sale_id bigint not null, product_id bigint not null, unit_price numeric not null, discount_pct numeric);
-create table public.online_order_lines (id bigserial primary key, order_id bigint not null, product_id bigint not null, unit_price_hist numeric not null, disc_pct numeric);
+create table public.product_sales (id bigint primary key, clinic_id bigint not null, total_amount numeric not null,
+  complimentary boolean not null default false, voided_at timestamptz);
+create table public.product_sale_lines (id bigserial primary key, product_sale_id bigint not null, product_id bigint not null,
+  qty int not null default 1, unit_price numeric not null, discount_pct numeric not null default 0);
+create table public.online_orders (id bigint primary key, disc_mode online_disc_mode not null default 'none', round_off numeric not null default 0, amount numeric);
+create table public.online_offers (id bigint primary key, type online_offer_type not null, bogo_type online_bogo_type, paid_pct numeric);
+create table public.online_order_lines (id bigserial primary key, order_id bigint not null, product_id bigint not null, qty int not null default 1,
+  unit_price_hist numeric, disc_pct numeric not null default 0, offer_id bigint);
 
 insert into public.clinics values
   (1, 'Ludhiana', true, 'Z-LDH'),
@@ -61,8 +73,21 @@ insert into public.retail_products (id, sku, name, zoho_item_id, price, active) 
   (107, 'GH-1', 'Ghost Product', 'I-GONE', 500, true);
 update public.retail_products set created_at = '2026-11-02T20:00:00Z' where id = 103;  -- added 3 Nov 01:30 IST (still 2 Nov in UTC)
 
--- clinic sale at Ludhiana, 14 Nov: 2 × ₹1,000 less 10% = ₹1,800; plus 1 free sample
-insert into public.product_sale_lines (product_sale_id, product_id, unit_price, discount_pct) values (9001, 101, 1000, 10), (9002, 103, 850, 0), (9003, 102, 950, 0), (9004, 103, 850, 0), (9005, 105, 1200, 0), (9006, 104, 4999, 0);
+-- clinic bills (total_amount = what the bill really charges, GST included)
+insert into public.product_sales (id, clinic_id, total_amount, complimentary, voided_at) values
+  (9001, 1, 1800, false, null),   -- 2 serums at ₹1,000 less 10%
+  (9002, 10, 850, false, null),
+  (9003, 1, 950, false, null),
+  (9004, 1, 850, false, null),
+  (9005, 1, 3600, false, null),
+  (9006, 1, 9998, false, null),
+  (9007, 1, 850, false, '2026-11-14T11:00:00+05:30'),  -- cancelled the next day: its stock came back
+  (9008, 1, 2000, false, null),   -- 3 serums, edited down to 2
+  (9009, 1, 0, true, null),       -- a free bill: 2 creams, edited down to 1
+  (9010, 1, 1500, false, null);   -- a whole-bill offer: 2 serums at ₹1,000 (lines) for ₹1,500
+insert into public.product_sale_lines (product_sale_id, product_id, qty, unit_price, discount_pct) values
+  (9001, 101, 2, 1000, 10), (9002, 103, 1, 850, 0), (9003, 102, 1, 950, 0), (9004, 103, 1, 850, 0), (9005, 105, 3, 1200, 0),
+  (9006, 104, 2, 4999, 0), (9007, 103, 1, 850, 0), (9008, 101, 2, 1000, 0), (9009, 103, 1, 850, 0), (9010, 101, 2, 1000, 0);
 insert into public.stock_movements (product_id, clinic_id, qty, reason, product_sale_id, created_at) values
   (101, 1, -2, 'sale', 9001, '2026-11-14T11:00:00+05:30'),
   (101, 1, -1, 'complimentary', null, '2026-11-14T12:00:00+05:30'),
@@ -71,14 +96,30 @@ insert into public.stock_movements (product_id, clinic_id, qty, reason, product_
   (103, 1, -1, 'sale', 9004, '2026-11-14T20:00:00Z'),               -- 15 Nov 01:30 IST: an IST day, not a UTC day
   (105, 1, -3, 'sale', 9005, '2026-10-01T10:00:00+05:30'),          -- no Zoho item: left out
   (104, 1, -2, 'sale', 9006, '2026-11-01T10:00:00+05:30'),          -- Zoho does not track it: left out
-  (101, 13, 50, 'adjustment', null, '2026-11-11T09:00:00+05:30');   -- stock received: not a sale
--- online team order (Mohali dispatch) 13 Nov, returned (RTO) 14 Nov; a Shopify website order 13 Nov
-insert into public.online_order_lines (order_id, product_id, unit_price_hist, disc_pct) values (7001, 101, 1000, 0), (7002, 103, 850, 0);
+  (103, 1, -1, 'sale', 9007, '2026-11-13T11:00:00+05:30'),
+  (103, 1, 1, 'adjustment', 9007, '2026-11-14T11:00:00+05:30'),      -- the bill cancelled: the cream comes back
+  (101, 1, -3, 'sale', 9008, '2026-11-12T10:00:00+05:30'),
+  (101, 1, 1, 'adjustment', 9008, '2026-11-12T10:30:00+05:30'),      -- edited from 3 to 2
+  (103, 1, -2, 'complimentary', 9009, '2026-11-11T10:00:00+05:30'),
+  (103, 1, 1, 'adjustment', 9009, '2026-11-11T10:30:00+05:30'),      -- a free bill edited down: one free sample less
+  (101, 1, -2, 'sale', 9010, '2026-11-09T12:00:00+05:30'),
+  (101, 13, 50, 'adjustment', null, '2026-11-11T09:00:00+05:30');   -- on no bill (not seen in production): never a sale
+-- online orders. amount = products − discounts − round-off + delivery charge
+insert into public.online_offers values (1, 'bogo', 'b1g1', 0);
+insert into public.online_orders (id, disc_mode, round_off, amount) values
+  (7001, 'none', 0, 3000),        -- online team, 13 Nov, one returned (RTO) 14 Nov
+  (7002, 'none', 0, 900),         -- website (Shopify), 13 Nov: ₹850 cream + ₹50 COD fee
+  (7003, 'auto', 0, 1000),        -- buy one get one: 2 serums at ₹1,000, one free
+  (7004, 'none', 10, 840);        -- ₹850 cream, ₹10 round-off
+insert into public.online_order_lines (order_id, product_id, qty, unit_price_hist, disc_pct, offer_id) values
+  (7001, 101, 3, 1000, 0, null), (7002, 103, 1, 850, 0, null), (7003, 101, 2, 1000, 0, 1), (7004, 103, 1, 850, 0, null);
 insert into public.online_shopify_orders (order_id) values (7002);
 insert into public.stock_movements (product_id, clinic_id, qty, reason, online_order_id, created_at) values
   (101, 13, -3, 'online_sale', 7001, '2026-11-13T16:00:00+05:30'),
   (101, 13, 1, 'online_rto_in', 7001, '2026-11-14T16:00:00+05:30'),
-  (103, 13, -1, 'online_sale', 7002, '2026-11-13T17:00:00+05:30');
+  (103, 13, -1, 'online_sale', 7002, '2026-11-13T17:00:00+05:30'),
+  (101, 13, -2, 'online_sale', 7003, '2026-11-12T16:00:00+05:30'),
+  (103, 13, -1, 'online_sale', 7004, '2026-11-12T17:00:00+05:30');
 -- Mumbai sales Zoho refused (no access to the location)
 insert into public.stock_movements (product_id, clinic_id, qty, reason, created_at, sync_status, sync_error) values
   (101, 5, -1, 'sale', '2026-11-05T10:00:00+05:30', 'failed', '{"code":400040,"message":"You do not have access to the location"}'),
@@ -267,14 +308,14 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     expect(src["clinic:5"]).toMatchObject({ locationId: "Z-MUM" });
     expect(src["online_team:13"]).toMatchObject({ channel: "online_team", locationId: "Z-MOH", clinicId: null, label: "Online team · Mohali - Warehouse dispatch" });
     expect(src["website:13"]).toMatchObject({ channel: "website", locationId: "Z-MOH" });
-    expect(src["clinic:13"]).toBeUndefined(); // stock received at the warehouse does not make it a sales point
+    expect(src["clinic:13"]).toBeUndefined(); // stock on no bill does not make the warehouse a sales point
     expect(ds.sources).toHaveLength(5);
 
     const S = pi(ds, "I-SERUM");
     const C = pi(ds, "I-CREAM");
-    const sold = (p: number, s: string, d: string) => ds.sold[p]![si(ds, s)]![day(ds, d)];
-    const used = (p: number, s: string, d: string) => ds.used[p]![si(ds, s)]![day(ds, d)];
-    const value = (p: number, s: string, d: string) => ds.value[p]![si(ds, s)]![day(ds, d)];
+    const sold = (p: number, s: string, d: string) => ds.sold[p]![si(ds, s)]![day(ds, d)] ?? NaN;
+    const used = (p: number, s: string, d: string) => ds.used[p]![si(ds, s)]![day(ds, d)] ?? NaN;
+    const value = (p: number, s: string, d: string) => ds.value[p]![si(ds, s)]![day(ds, d)] ?? NaN;
     expect(sold(S, "clinic:1", "2026-11-14")).toBe(2);
     expect(used(S, "clinic:1", "2026-11-14")).toBe(3); // + the free sample
     expect(value(S, "clinic:1", "2026-11-14")).toBeCloseTo(1800);
@@ -285,15 +326,35 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     expect(value(S, "online_team:13", "2026-11-14")).toBeCloseTo(-1000);
     expect(sold(C, "website:13", "2026-11-13")).toBe(1);
     expect(sold(C, "clinic:1", "2026-11-15")).toBe(1); // 01:30 IST on 15 Nov
-    expect(sold(C, "clinic:1", "2026-11-14")).toBe(0);
-    expect(used(S, "online_team:13", "2026-11-11")).toBe(0); // stock received is not usage
+
+    // a clinic bill cancelled the next day: the sale, then its reversal — nothing left over the two days
+    expect([sold(C, "clinic:1", "2026-11-13"), sold(C, "clinic:1", "2026-11-14")]).toEqual([1, -1]);
+    expect(value(C, "clinic:1", "2026-11-13") + value(C, "clinic:1", "2026-11-14")).toBeCloseTo(0);
+    // a bill edited from 3 to 2: 2 sold, ₹2,000
+    expect(sold(S, "clinic:1", "2026-11-12")).toBe(2);
+    expect(value(S, "clinic:1", "2026-11-12")).toBeCloseTo(2000);
+    // a free bill edited from 2 to 1: 1 used, none sold, no money
+    expect([used(C, "clinic:1", "2026-11-11"), sold(C, "clinic:1", "2026-11-11")]).toEqual([1, 0]);
+    // a whole-bill offer: 2 serums whose lines say ₹2,000, billed ₹1,500
+    expect(sold(S, "clinic:1", "2026-11-09")).toBe(2);
+    expect(value(S, "clinic:1", "2026-11-09")).toBeCloseTo(1500);
+    // buy one get one online: 2 serums leave stock, ₹1,000 paid
+    expect(sold(S, "online_team:13", "2026-11-12")).toBe(2);
+    expect(value(S, "online_team:13", "2026-11-12")).toBeCloseTo(1000);
+    // round-off comes off; the delivery charge (COD fee) is never product sales
+    expect(value(C, "online_team:13", "2026-11-12")).toBeCloseTo(840);
+    expect(value(C, "website:13", "2026-11-13")).toBeCloseTo(850);
+    // stock on no bill is not usage, and does not make a sales point
+    expect(ds.used[S]!.every((src, i) => ds.sources[i]!.channel !== "clinic" || src[day(ds, "2026-11-11")] === 0)).toBe(true);
+
     const totalSerum = ds.sold[S]!.reduce((a, arr) => a + arr.reduce((x, y) => x + y, 0), 0);
-    expect(totalSerum).toBe(2 + 1 + 3 - 1 + 2); // + 2 Mumbai sales Zoho refused (still real sales)
+    // clinic 2 + 1 + 2 + 2 · online 3 − 1 + 2 · Mumbai's 2 sales Zoho refused (still real sales)
+    expect(totalSerum).toBe(7 + 4 + 2);
 
     // channels
     const ch = Object.fromEntries(ds.channels.map((c) => [c.id, c]));
     expect(ch.clinic).toMatchObject({ connected: true, dataFrom: "2026-10-01" }); // any product's sale counts, the left-out Facial Kit included
-    expect(ch.online_team).toMatchObject({ connected: true, dataFrom: "2026-11-13" });
+    expect(ch.online_team).toMatchObject({ connected: true, dataFrom: "2026-11-12" });
     expect(ch.website).toMatchObject({ connected: true, dataFrom: "2026-11-13" });
     expect(ch.amazon?.connected).toBe(false);
     expect(ch.flipkart?.note).toMatch(/Tell us how these orders are recorded/);
@@ -338,13 +399,13 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     const panel = await panelDb();
     const { db: crm } = await crmDb();
     await fullSync(panel, crm);
-    // earlier days' photos: the serum had none anywhere readable on 12 and 13 Nov (Mumbai is not readable, so it does not count)
+    // earlier days' photos: the serum had none anywhere readable on 8 and 13 Nov (Mumbai is not readable, so it does not count)
     await panel.exec(`insert into stock_snapshots values
-      ('2026-11-12','I-SERUM','Z-MOH',0), ('2026-11-12','I-SERUM','Z-LDH',0), ('2026-11-12','I-SERUM','Z-MUM',5),
+      ('2026-11-08','I-SERUM','Z-MOH',0), ('2026-11-08','I-SERUM','Z-LDH',0), ('2026-11-08','I-SERUM','Z-MUM',5),
       ('2026-11-13','I-SERUM','Z-MOH',0), ('2026-11-13','I-SERUM','Z-LDH',0)`);
     const ds = await buildDataset(panel, NOW);
     const S = pi(ds, "I-SERUM");
-    expect(ds.inStock?.[S]?.[day(ds, "2026-11-12")]).toBe(0); // nothing anywhere, nothing sold
+    expect(ds.inStock?.[S]?.[day(ds, "2026-11-08")]).toBe(0); // nothing anywhere, nothing sold
     expect(ds.inStock?.[S]?.[day(ds, "2026-11-13")]).toBe(1); // 3 sold online that day: it was in stock
     expect(ds.inStock?.[S]?.[day(ds, "2026-11-01")]).toBe(1); // no photo that day: never dropped
     expect(ds.inStock?.[S]?.[day(ds, TODAY)]).toBe(1);
@@ -436,7 +497,7 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     expect(before.used[S]![si(before, "clinic:1")]![day(before, "2026-11-14")]).toBe(3);
 
     // The free sample on 14 Nov is voided in the CRM; the 1 Oct sale is outside the re-read window.
-    await crmExec(`delete from public.stock_movements where reason = 'complimentary'; delete from public.stock_movements where product_id = 105`);
+    await crmExec(`delete from public.stock_movements where reason = 'complimentary' and product_id = 101; delete from public.stock_movements where product_id = 105`);
     const r = await runSync(["crm_flows"], { panel, crm, now: NOW });
     expect(r[0]!.note).toBe(`refreshed ${addDays(TODAY, -2)} → ${TODAY}`);
     const after = await buildDataset(panel, NOW);
