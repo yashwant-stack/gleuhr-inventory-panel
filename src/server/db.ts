@@ -1,8 +1,9 @@
 import "server-only";
 // Two databases, both reached only from the server:
-//  - the PANEL database (the panel's own Supabase project): PANEL_DATABASE_URL
-//  - the CRM database (shared by the clinic and online CRMs), READ-ONLY: CRM_DATABASE_URL,
-//    a login that can only SELECT the few tables listed in src/server/crm.ts.
+//  - the PANEL database: its own Postgres (PANEL_DATABASE_URL, e.g. its own Supabase project), or, when that is
+//    not set, an embedded one saved under .data/panel (see embeddedDb);
+//  - the CRM database (shared by the clinic and online CRMs), READ-ONLY: a SQL login (CRM_DATABASE_URL) or the
+//    CRM project's REST API (SUPABASE_URL + SUPABASE_SECRET_KEY) — see src/server/sources.ts.
 import postgres from "postgres";
 
 // JSON parameters are always sent as text and cast in SQL (`$1::text::jsonb`): postgres.js
@@ -31,23 +32,48 @@ export function postgresDb(url: string): Db & { close(): Promise<void> } {
   };
 }
 
-let panel: Db | null = null;
-let crm: Db | null = null;
-
 export class NotConfigured extends Error {}
 
-export function panelDb(): Db {
-  const url = process.env.PANEL_DATABASE_URL;
-  if (!url) throw new NotConfigured("PANEL_DATABASE_URL is not set — the panel's database is not connected yet");
-  panel ??= postgresDb(url);
-  return panel;
+const MIGRATION = "supabase/migrations/20261115000001_panel_init.sql";
+
+/**
+ * The panel database, embedded: PGlite (Postgres in WebAssembly) saving to a folder on this machine.
+ * Used when PANEL_DATABASE_URL is not set: right for one long-running server (a VM, this container),
+ * NOT for serverless hosting, whose disk is wiped. The migration is applied on first use (it is idempotent).
+ */
+export function embeddedDb(dir: string): Db {
+  let ready: Promise<{ query: (t: string, p?: unknown[]) => Promise<{ rows: unknown[] }>; exec: (t: string) => Promise<unknown> }> | null = null;
+  const pg = () =>
+    (ready ??= (async () => {
+      const [{ PGlite }, fs, path] = await Promise.all([import("@electric-sql/pglite"), import("node:fs"), import("node:path")]);
+      fs.mkdirSync(dir, { recursive: true });
+      const db = new PGlite(dir);
+      await db.exec(fs.readFileSync(path.join(process.cwd(), MIGRATION), "utf8"));
+      return db;
+    })());
+  return {
+    async query<T>(text: string, params: unknown[] = []) {
+      return (await (await pg()).query(text, params)).rows as T[];
+    },
+    async exec(text: string) {
+      await (await pg()).exec(text);
+    },
+  };
 }
 
-export function crmDb(): Db {
-  const url = process.env.CRM_DATABASE_URL;
-  if (!url) throw new NotConfigured("CRM_DATABASE_URL is not set — the read-only CRM connection is not configured yet");
-  crm ??= postgresDb(url);
-  return crm;
+// One instance per server process (kept on globalThis so dev-mode reloads do not open the folder twice).
+const g = globalThis as unknown as { __panelDb?: Db };
+
+export function panelDb(): Db {
+  if (g.__panelDb) return g.__panelDb;
+  const url = process.env.PANEL_DATABASE_URL;
+  g.__panelDb = url ? postgresDb(url) : embeddedDb(process.env.PANEL_DATA_DIR || `${process.cwd()}/.data/panel`);
+  return g.__panelDb;
+}
+
+/** Which panel database is in use, for Data health. */
+export function panelDbKind(): "postgres" | "embedded" {
+  return process.env.PANEL_DATABASE_URL ? "postgres" : "embedded";
 }
 
 export const num = (v: unknown): number => {

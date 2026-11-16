@@ -46,13 +46,15 @@ export interface CrmProductRow {
   active: boolean;
   /** The IST day it was added to the CRM. */
   created_on: string | null;
+  /** The online CRM's category (online_product_meta), e.g. "Serums"; Zoho's items carry none. */
+  category: string | null;
 }
 
 export async function readProducts(crm: Db): Promise<CrmProductRow[]> {
   const rows = await crm.query<Record<string, unknown>>(
-    `select id::text as crm_product_id, sku, name, zoho_item_id, price, active,
-            ((created_at at time zone 'Asia/Kolkata')::date)::text as created_on
-     from public.retail_products`,
+    `select rp.id::text as crm_product_id, rp.sku, rp.name, rp.zoho_item_id, rp.price, rp.active,
+            ((rp.created_at at time zone 'Asia/Kolkata')::date)::text as created_on, m.category
+     from public.retail_products rp left join public.online_product_meta m on m.product_id = rp.id`,
   );
   return rows.map((r) => ({
     crm_product_id: String(r.crm_product_id),
@@ -62,6 +64,7 @@ export async function readProducts(crm: Db): Promise<CrmProductRow[]> {
     price: num(r.price),
     active: Boolean(r.active),
     created_on: (r.created_on as string | null) ?? null,
+    category: (r.category as string | null) || null,
   }));
 }
 
@@ -163,9 +166,15 @@ left join lateral (
 ) pr on true
 group by 1, 2, 3, 4, 5`;
 
+/** FLOWS_SQL over another schema holding copies of the same tables (the REST path's staging, `crm_stage`). */
+export function flowsSql(schema: string): string {
+  if (!/^[a-z_]+$/.test(schema)) throw new Error("bad schema name");
+  return FLOWS_SQL.replaceAll("public.", `${schema}.`);
+}
+
 /** Daily totals for stock movements created in [fromIso, toIso). */
-export async function readFlows(crm: Db, fromIso: string, toIso: string): Promise<FlowRow[]> {
-  const rows = await crm.query<Record<string, unknown>>(FLOWS_SQL, [fromIso, toIso]);
+export async function readFlows(crm: Db, fromIso: string, toIso: string, sql = FLOWS_SQL): Promise<FlowRow[]> {
+  const rows = await crm.query<Record<string, unknown>>(sql, [fromIso, toIso]);
   return rows.map((r) => ({
     day: String(r.day),
     crm_product_id: String(r.crm_product_id),
@@ -216,4 +225,26 @@ export function plainZohoError(raw: string): string {
   if (/9205|sufficient stock/i.test(raw)) return "Zoho: not enough stock (negative stock blocked)";
   if (/non-inventory/i.test(raw)) return "Zoho: item not tracked as inventory";
   return raw ? raw.slice(0, 120) : "Unknown";
+}
+
+// ── the CRM as the sync sees it: direct SQL (a read-only database login) or the Supabase REST API ──
+
+export interface CrmSource {
+  /** How the CRM is reached, for the sync log. */
+  via: "sql" | "rest";
+  clinics(): Promise<CrmClinicRow[]>;
+  products(): Promise<CrmProductRow[]>;
+  flows(fromIso: string, toIso: string): Promise<FlowRow[]>;
+  pushHealth(sinceIso: string): Promise<PushHealthRow[]>;
+}
+
+/** The CRM through a read-only SQL login (CRM_DATABASE_URL). */
+export function sqlCrm(db: Db): CrmSource {
+  return {
+    via: "sql",
+    clinics: () => readClinics(db),
+    products: () => readProducts(db),
+    flows: (from, to) => readFlows(db, from, to),
+    pushHealth: (since) => readPushHealth(db, since),
+  };
 }

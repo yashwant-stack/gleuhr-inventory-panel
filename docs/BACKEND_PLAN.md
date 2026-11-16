@@ -2,6 +2,8 @@
 
 Updated 15 Nov 2026 (backend stage 1). The frontend stage is unchanged; this stage adds the server side that feeds it real data.
 
+**Status, 16 Nov 2026: running on live data.** Connected to the CRM database (read-only, through its REST API) and Zoho; 40 products, 16 Zoho locations, 12 clinics. Checked: the panel's sales for 1–15 Nov equal the CRM's own figures to the unit and the rupee on every channel (clinics 7,782 units ₹1,16,34,483; online team 6,567 ₹98,16,012; website 1,469 ₹22,94,952).
+
 **In one line:** every 2 hours the panel copies **stock per location from Zoho** and **sales per channel from the CRM database** into its **own** database. The screens then read one data feed (`/api/dataset`), behind an access key. Nothing is ever written to Zoho or to the CRM database.
 
 Until the switch-on steps in §2 are done, the panel runs on the built-in sample data, exactly as before.
@@ -20,6 +22,9 @@ Until the switch-on steps in §2 are done, the panel runs on the built-in sample
 | Scheduled runs | `vercel.json`, `src/app/api/cron/sync` | Every 2 hours at :17 past (UTC), plus a daily run at 01:41 UTC (07:11 IST). Each needs `Authorization: Bearer <CRON_SECRET>`. |
 | Access key | `src/server/access.ts`, `src/app/api/unlock`, `src/components/LoadScreen.tsx` | An interim gate until personal logins exist. The live panel asks for a key; the browser keeps a 30-day httpOnly cookie that holds a hash, never the key. With no key set on the server, live data is refused. |
 | Live switch | `src/lib/data/hooks.ts` | `NEXT_PUBLIC_DATA_SOURCE=live` makes the screens read `/api/dataset` instead of the sample data. |
+| CRM through REST | `src/server/crm-rest.ts`, `src/server/sources.ts` | With `SUPABASE_URL` + `SUPABASE_SECRET_KEY` (no SQL login), the CRM is read with GET requests only, 1,000 rows at a time. A window's movements and the bills / orders / lines / offers behind them are copied into the panel database's `crm_stage` schema, the same sales query runs there, and the copies are emptied. Tested to give the same data as the SQL path. |
+| Embedded panel database | `src/server/db.ts` | With no `PANEL_DATABASE_URL`, the panel keeps its own Postgres (PGlite) in `.data/panel` and applies the migration itself. For one long-running server only. |
+| One sync at a time | `sync_lock` table | A second run is refused (409) while one is running; a crashed run's lock expires after 15 minutes. |
 
 ### The six sync jobs
 
@@ -45,6 +50,10 @@ About **190 Zoho calls a day** in total, against the panel's own ceiling of 600,
 - **History starts when the product was added to the CRM**, not at its first sale, so a slow seller isn't treated as "new" with an inflated rate.
 - **Stock-out days** are left out of the rate only when that day's stock photo shows nothing at any readable location **and** nothing sold that day. Days before the photos began are never dropped.
 - **A channel's data starts** at its first recorded sale of any product. Amazon and Flipkart show "not connected" with the reason.
+- **Each sales point is measured from the day it joined the CRM.** Clinic product sales were recorded by Chandigarh from 28 Aug and by the other clinics from 1–15 Oct. A clinic's daily rate counts only its own days, never the weeks before it joined as zero sales.
+- **No growth % that is really a clinic joining.** A change vs the previous period shows only when the sales points behind it were recording through that whole period (points under 5% of the sales are ignored); otherwise the panel says "earlier data incomplete".
+- **Categories** come from Zoho, else from the online CRM (`online_product_meta`); Zoho's items carry none today.
+- **Stock below zero** is shown as Zoho gives it and listed on Data health (16 places on 16 Nov, e.g. Multipurpose Day Cream at Mohali −75).
 - **Sales value never comes from Zoho.** Zoho is read for stock only. Every sale's value comes from the CRM bill or order it belongs to, as the customer paid it, GST included:
   - **Clinic:** each bill line's price after its discount, scaled to the bill's real total. Whole-bill offers (buy-one-get-one, quantity tiers) and round-off sit on the bill, not on its lines. Example: 2 serums whose lines say ₹2,000, billed ₹1,500, count as ₹1,500.
   - **Online:** each line's price after its discount, less buy-one-get-one free units and round-off (the CRM's own product-total formula). The delivery charge (COD fee, shipping) is left out, because it isn't product sales.

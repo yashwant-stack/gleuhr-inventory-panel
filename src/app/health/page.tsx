@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { CheckCircle2, CircleAlert, CircleX } from "lucide-react";
 import { Card, CardHeader, ChannelDot, Note, PageHeader, StatTile } from "@/components/ui";
 import { useDataset } from "@/lib/data/hooks";
-import { primaryLocation } from "@/lib/data/model";
+import { belowZeroStock, primaryLocation } from "@/lib/data/model";
 import { fmtDay } from "@/lib/dates";
 import { fmtInt } from "@/lib/format";
 
@@ -24,6 +24,7 @@ export default function HealthPage() {
   const takenFrom = (locId: string) => [...new Set(ds.sources.filter((s) => s.locationId === locId).map((s) => s.channel))];
   const locName = (id: string) => ds.locations.find((l) => l.id === id)?.name ?? id;
   const primary = primaryLocation(ds);
+  const belowZero = belowZeroStock(ds);
   // An unlinked clinic whose name matches a Zoho location only needs the link set in the CRM.
   const zohoHasLocation = h.unmappedClinics.filter((c) => ds.locations.some((l) => l.name.trim().toLowerCase() === c.name.trim().toLowerCase())).map((c) => c.name);
 
@@ -238,8 +239,39 @@ export default function HealthPage() {
         </p>
       </Card>
 
+      <Card className="mt-3" pad={false}>
+        <div className="p-4 pb-2">
+          <CardHeader className="mb-0" title="7 · Stock below zero in Zoho" sub="Stock went out before Zoho recorded it coming in — usually a receipt or transfer not entered yet" />
+        </div>
+        {belowZero.length === 0 ? (
+          <p className="px-4 pb-4 text-[13px] text-ink-2">None: no product shows stock below zero at any readable location.</p>
+        ) : (
+          <div className="max-h-[320px] overflow-auto scroll-thin">
+            <table className="dtable">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Location</th>
+                  <th className="num">Zoho stock</th>
+                </tr>
+              </thead>
+              <tbody>
+                {belowZero.map((b) => (
+                  <tr key={`${b.productId}:${b.location}`}>
+                    <td className="font-medium">{b.product}</td>
+                    <td className="text-ink-2">{b.location}</td>
+                    <td className="num font-semibold text-st-critical">{fmtInt(b.qty)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="px-4 pt-2 pb-4 text-[12px] text-muted">Fix: enter the missing receipt or transfer in Zoho. The panel uses Zoho’s numbers as they are, so these lower the totals.</p>
+      </Card>
+
       <Card className="mt-3">
-        <CardHeader title="7 · Last syncs" />
+        <CardHeader title="8 · Last syncs" />
         <ul className="space-y-1.5 text-[13px]">
           {h.lastSync.map((s) => (
             <li key={s.job} className="flex items-center gap-2">

@@ -28,6 +28,8 @@ export interface Source {
   /** The CRM clinic behind clinic sales and online clinic pickups / Rapido; null for warehouse dispatch. */
   clinicId: string | null;
   label: string;
+  /** The day this sales point began recording sales (live data: clinics joined the CRM on different days). Absent = its channel's first day. */
+  dataFrom?: string | null;
 }
 
 export interface ChannelInfo {
@@ -146,6 +148,17 @@ export function decodeDataset(w: DatasetWire): Dataset {
   }
   const { cells: _cells, inStock, ...rest } = w;
   return { ...rest, sold, value, used, inStock: inStock?.map((a) => Uint8Array.from(a)) };
+}
+
+/** Product × location pairs where Zoho reports stock below zero (stock went out before Zoho recorded it coming in). */
+export function belowZeroStock(ds: Dataset): { productId: string; product: string; location: string; qty: number }[] {
+  const out: { productId: string; product: string; location: string; qty: number }[] = [];
+  for (const p of ds.products)
+    for (const l of ds.locations) {
+      const q = ds.stock[p.id]?.[l.id];
+      if (q !== null && q !== undefined && q < 0) out.push({ productId: p.id, product: p.name, location: l.name, qty: q });
+    }
+  return out.sort((a, b) => a.qty - b.qty);
 }
 
 export function connectedChannels(ds: Dataset): ChannelId[] {

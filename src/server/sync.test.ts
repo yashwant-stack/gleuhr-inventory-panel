@@ -9,10 +9,11 @@ import { computeMetrics } from "../lib/data/engine";
 import { decodeDataset, encodeDataset, type Dataset } from "../lib/data/model";
 import { addDays, diffDays } from "../lib/dates";
 import { DEFAULT_FORMULA_SETTINGS } from "../lib/domain/types";
-import { plainZohoError } from "./crm";
+import { type CrmSource, plainZohoError, sqlCrm } from "./crm";
+import { postgrestFetcher, restCrm, type RowFetcher } from "./crm-rest";
 import { buildDataset, NotReady } from "./dataset";
 import { postgresDb, type Db } from "./db";
-import { DAILY_JOBS, FREQUENT_JOBS, runSync, type JobResult, type SyncDeps } from "./sync";
+import { DAILY_JOBS, FREQUENT_JOBS, runSync, SyncBusy, type JobResult, type SyncDeps } from "./sync";
 import { rowStock, type ZohoConfig } from "./zoho";
 
 const MIGRATION = readFileSync(path.resolve(__dirname, "../../supabase/migrations/20261115000001_panel_init.sql"), "utf8");
@@ -55,6 +56,8 @@ create table public.product_sale_lines (id bigserial primary key, product_sale_i
   qty int not null default 1, unit_price numeric not null, discount_pct numeric not null default 0);
 create table public.online_orders (id bigint primary key, disc_mode online_disc_mode not null default 'none', round_off numeric not null default 0, amount numeric);
 create table public.online_offers (id bigint primary key, type online_offer_type not null, bogo_type online_bogo_type, paid_pct numeric);
+create table public.online_product_meta (product_id bigint primary key, category text);
+insert into public.online_product_meta values (101, 'Serums'), (103, 'Creams & Moisturizers');
 create table public.online_order_lines (id bigserial primary key, order_id bigint not null, product_id bigint not null, qty int not null default 1,
   unit_price_hist numeric, disc_pct numeric not null default 0, offer_id bigint);
 
@@ -110,16 +113,18 @@ insert into public.online_orders (id, disc_mode, round_off, amount) values
   (7001, 'none', 0, 3000),        -- online team, 13 Nov, one returned (RTO) 14 Nov
   (7002, 'none', 0, 900),         -- website (Shopify), 13 Nov: ₹850 cream + ₹50 COD fee
   (7003, 'auto', 0, 1000),        -- buy one get one: 2 serums at ₹1,000, one free
-  (7004, 'none', 10, 840);        -- ₹850 cream, ₹10 round-off
+  (7004, 'none', 10, 840),        -- ₹850 cream, ₹10 round-off
+  (7005, 'none', 0, 850);         -- picked up at Delhi East, a clinic not linked to Zoho
 insert into public.online_order_lines (order_id, product_id, qty, unit_price_hist, disc_pct, offer_id) values
-  (7001, 101, 3, 1000, 0, null), (7002, 103, 1, 850, 0, null), (7003, 101, 2, 1000, 0, 1), (7004, 103, 1, 850, 0, null);
+  (7001, 101, 3, 1000, 0, null), (7002, 103, 1, 850, 0, null), (7003, 101, 2, 1000, 0, 1), (7004, 103, 1, 850, 0, null), (7005, 103, 1, 850, 0, null);
 insert into public.online_shopify_orders (order_id) values (7002);
 insert into public.stock_movements (product_id, clinic_id, qty, reason, online_order_id, created_at) values
   (101, 13, -3, 'online_sale', 7001, '2026-11-13T16:00:00+05:30'),
   (101, 13, 1, 'online_rto_in', 7001, '2026-11-14T16:00:00+05:30'),
   (103, 13, -1, 'online_sale', 7002, '2026-11-13T17:00:00+05:30'),
   (101, 13, -2, 'online_sale', 7003, '2026-11-12T16:00:00+05:30'),
-  (103, 13, -1, 'online_sale', 7004, '2026-11-12T17:00:00+05:30');
+  (103, 13, -1, 'online_sale', 7004, '2026-11-12T17:00:00+05:30'),
+  (103, 10, -1, 'online_sale', 7005, '2026-11-12T18:00:00+05:30');
 -- Mumbai sales Zoho refused (no access to the location)
 insert into public.stock_movements (product_id, clinic_id, qty, reason, created_at, sync_status, sync_error) values
   (101, 5, -1, 'sale', '2026-11-05T10:00:00+05:30', 'failed', '{"code":400040,"message":"You do not have access to the location"}'),
@@ -177,7 +182,7 @@ const CFG: ZohoConfig = { apiBase: "https://zoho.test", accountsBase: "https://a
 
 const ITEMS = [
   { item_id: "I-SERUM", name: "Hair Serum", sku: "HS-01", rate: 999, purchase_rate: 300, vendor_name: "Acme Labs", category_name: "Hair", status: "active", track_inventory: true },
-  { item_id: "I-CREAM", name: "Day Cream", sku: "DC-01", rate: 799, purchase_rate: 10, category_name: "Skin", status: "active", track_inventory: true },
+  { item_id: "I-CREAM", name: "Day Cream", sku: "DC-01", rate: 799, purchase_rate: 10, status: "active", track_inventory: true },
   { item_id: "I-PLAN", name: "Skin Plan", sku: "SP-1M", rate: 4999, status: "active", track_inventory: false },
   { item_id: "I-COMBO", name: "Amazon Combo", sku: "AC-1", rate: 1499, status: "active", track_inventory: true },
   { item_id: "I-RETIRED", name: "Retired Item", sku: "RT-1", rate: 99, status: "inactive", track_inventory: true },
@@ -249,7 +254,7 @@ function handClock(start = NOW) {
 
 const byJob = (rs: JobResult[], job: string) => rs.find((r) => r.job === job)!;
 
-async function fullSync(panel: Db, crm: Db, extra: Partial<SyncDeps> = {}) {
+async function fullSync(panel: Db, crm: CrmSource, extra: Partial<SyncDeps> = {}) {
   const z = fakeZoho();
   const c = handClock();
   const results = await runSync([...FREQUENT_JOBS, ...DAILY_JOBS], { panel, crm, zohoCfg: CFG, fetchFn: z.fetchFn, now: NOW, clock: c.clock, sleep: c.sleep, ...extra });
@@ -262,7 +267,11 @@ const si = (ds: Dataset, id: string) => ds.sources.findIndex((s) => s.id === id)
 
 describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real panel migration)", (driver) => {
   const panelDb = async () => (await driver.fresh(MIGRATION)).db;
-  const crmDb = () => driver.fresh(CRM_SCHEMA);
+  // the CRM through SQL (a read-only login)
+  const crmDb = async () => {
+    const f = await driver.fresh(CRM_SCHEMA);
+    return { db: sqlCrm(f.db), exec: f.exec };
+  };
 
   it("builds the panel's data: sales by channel from the CRM, stock by Zoho location", async () => {
     const panel = await panelDb();
@@ -296,6 +305,7 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     expect(ds.days[0]).toBe("2026-05-20");
     expect(serum).toMatchObject({ name: "Hair Serum", price: 999, cost: 300, category: "Hair", packSize: 1, launchedOn: "2026-07-09" });
     expect(cream).toMatchObject({ price: 850, cost: 255, launchedOn: "2026-11-03" }); // ₹10 purchase price is a placeholder → 30% of price
+    expect(cream.category).toBe("Creams & Moisturizers"); // Zoho has no category for it: the online CRM's
     expect(ds.vendors.map((v) => v.name).sort()).toEqual(["Acme Labs", "Vendor not set in Zoho"]);
 
     expect(ds.stock["I-SERUM"]).toEqual({ "Z-MOH": 110, "Z-LDH": 40, "Z-MUM": null });
@@ -309,7 +319,9 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     expect(src["online_team:13"]).toMatchObject({ channel: "online_team", locationId: "Z-MOH", clinicId: null, label: "Online team · Mohali - Warehouse dispatch" });
     expect(src["website:13"]).toMatchObject({ channel: "website", locationId: "Z-MOH" });
     expect(src["clinic:13"]).toBeUndefined(); // stock on no bill does not make the warehouse a sales point
-    expect(ds.sources).toHaveLength(5);
+    // an online pickup at an unlinked clinic is that clinic's, booked on the primary — not warehouse dispatch
+    expect(src["online_team:10"]).toMatchObject({ locationId: "Z-MOH", clinicId: "10", label: "Online team · Delhi East (booked on Mohali - Warehouse)" });
+    expect(ds.sources).toHaveLength(6);
 
     const S = pi(ds, "I-SERUM");
     const C = pi(ds, "I-CREAM");
@@ -512,6 +524,112 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     expect(byJob(results, "zoho_stock").note).toBe("Zoho is not configured");
     expect(byJob(results, "crm_flows").note).toBe("The CRM connection is not configured");
     await expect(buildDataset(panel, NOW)).rejects.toBeInstanceOf(NotReady);
+  });
+});
+
+/** A stand-in for the CRM's REST API: answers PostgREST-style reads (eq / gte / lt / in, id ascending) from the fake CRM. */
+function fakePostgrest(raw: Db, log: string[] = []): RowFetcher {
+  return async (table, select, filters, key = "id") => {
+    log.push(table);
+    const cols = select.split(",").includes(key) ? select : `${key},${select}`;
+    const where: string[] = [];
+    const params: unknown[] = [];
+    for (const f of filters) {
+      const m = /^(\w+)=(eq|gte|lt|in)\.(.*)$/.exec(f);
+      if (!m) throw new Error(`unsupported filter ${f}`);
+      const [, col, op, val] = m;
+      const n = params.length + 1;
+      if (op === "in") {
+        params.push(JSON.stringify(val!.slice(1, -1).split(",")));
+        where.push(`${col}::text in (select jsonb_array_elements_text($${n}::text::jsonb))`);
+      } else if (op === "eq") {
+        params.push(val);
+        where.push(`${col}::text = $${n}`);
+      } else {
+        params.push(val);
+        where.push(`${col} ${op === "gte" ? ">=" : "<"} $${n}::timestamptz`);
+      }
+    }
+    const sql = `select coalesce(jsonb_agg(to_jsonb(t) order by t.${key}), '[]'::jsonb) as rows from (select ${cols} from public.${table}` +
+      (where.length ? ` where ${where.join(" and ")}` : "") + `) t`;
+    const [row] = await raw.query<{ rows: unknown }>(sql, params);
+    const rows = row?.rows;
+    return (typeof rows === "string" ? JSON.parse(rows) : rows) as Record<string, unknown>[];
+  };
+}
+
+describe.each(DRIVERS)("the CRM through its REST API, on $name", (driver) => {
+  it("gives the panel exactly the same data as reading the CRM with SQL", async () => {
+    const crmF = await driver.fresh(CRM_SCHEMA);
+    const viaSql = (await driver.fresh(MIGRATION)).db;
+    const viaRest = (await driver.fresh(MIGRATION)).db;
+    const log: string[] = [];
+    const a = await fullSync(viaSql, sqlCrm(crmF.db));
+    const b = await fullSync(viaRest, restCrm(fakePostgrest(crmF.db, log), viaRest));
+    expect(b.results.every((r) => r.ok)).toBe(true);
+    expect(b.results.map((r) => r.note)).toEqual(a.results.map((r) => r.note));
+    const x = await buildDataset(viaSql, NOW);
+    const y = await buildDataset(viaRest, NOW);
+    expect(y.products.map((p) => p.id)).toEqual(x.products.map((p) => p.id));
+    expect(y.sources).toEqual(x.sources);
+    const cents = (a: Float64Array) => Array.from(a).map((v) => Math.round(v * 100));
+    for (let p = 0; p < x.products.length; p++)
+      for (let s = 0; s < x.sources.length; s++) {
+        expect(Array.from(y.sold[p]![s]!)).toEqual(Array.from(x.sold[p]![s]!));
+        expect(Array.from(y.used[p]![s]!)).toEqual(Array.from(x.used[p]![s]!));
+        expect(cents(y.value[p]![s]!)).toEqual(cents(x.value[p]![s]!));
+      }
+    expect(y.health.failedPushes).toEqual(x.health.failedPushes);
+    expect(y.health.leftOutProducts).toEqual(x.health.leftOutProducts);
+    expect(y.channels).toEqual(x.channels);
+    // it read the bills, orders and lines behind the movements, and left no staged copies behind
+    expect(new Set(log)).toEqual(
+      new Set(["clinics", "retail_products", "online_product_meta", "stock_movements", "product_sales", "product_sale_lines", "online_orders", "online_order_lines", "online_shopify_orders", "online_offers"]),
+    );
+    const [left] = await viaRest.query<{ n: number }>("select count(*)::int as n from crm_stage.stock_movements");
+    expect(left?.n).toBe(0);
+  });
+
+  it("runs one sync at a time", async () => {
+    const panel = (await driver.fresh(MIGRATION)).db;
+    await panel.exec("insert into sync_lock values (1, now())");
+    await expect(runSync(["crm_flows"], { panel, now: NOW })).rejects.toBeInstanceOf(SyncBusy);
+    await panel.exec("update sync_lock set started_at = now() - interval '20 minutes'"); // a crashed run's lock expires
+    await expect(runSync(["crm_flows"], { panel, now: NOW })).resolves.toHaveLength(1);
+    const [lock] = await panel.query<{ n: number }>("select count(*)::int as n from sync_lock");
+    expect(lock?.n).toBe(0);
+  });
+});
+
+describe("the REST reader", () => {
+  it("only GETs, encodes filters, and pages by id 1,000 at a time", async () => {
+    const urls: string[] = [];
+    const methods: string[] = [];
+    const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      urls.push(String(input));
+      methods.push(init?.method ?? "GET");
+      expect(new Headers(init?.headers).get("apikey")).toBe("sb_secret_test");
+      const after = Number(new URL(String(input)).searchParams.get("id")?.replace("gt.", "") ?? 0);
+      const n = after < 2000 ? 1000 : 3;
+      return new Response(JSON.stringify(Array.from({ length: n }, (_, i) => ({ id: after + i + 1 }))), { status: 200 });
+    }) as typeof fetch;
+    const rows = await postgrestFetcher({ url: "https://crm.test", key: "sb_secret_test" }, fetchFn)("stock_movements", "qty", [
+      "created_at=gte.2026-11-01T00:00:00+05:30",
+      "product_sale_id=in.(1,2,3)",
+    ]);
+    expect(rows).toHaveLength(2003);
+    expect(methods.every((m) => m === "GET")).toBe(true);
+    expect(urls[0]).toBe(
+      "https://crm.test/rest/v1/stock_movements?select=id,qty&created_at=gte.2026-11-01T00%3A00%3A00%2B05%3A30&product_sale_id=in.(1,2,3)&order=id.asc&limit=1000",
+    );
+    expect(urls[1]).toContain("&id=gt.1000");
+    expect(urls[2]).toContain("&id=gt.2000");
+    expect(urls).toHaveLength(3);
+  });
+
+  it("stops with a plain error, never a half-read, when the CRM refuses", async () => {
+    const fetchFn = (async () => new Response('{"message":"permission denied"}', { status: 401 })) as unknown as typeof fetch;
+    await expect(postgrestFetcher({ url: "https://crm.test", key: "k" }, fetchFn)("clinics", "name", [])).rejects.toThrow(/CRM read of clinics failed: HTTP 401/);
   });
 });
 

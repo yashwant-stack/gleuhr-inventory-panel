@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { SalesTrendChart } from "@/components/charts";
 import { FilterBar } from "@/components/FilterBar";
 import { Button, Card, CardHeader, ChannelSplitBar, Delta, Empty, PageHeader, Segmented, sortRows, SortTh, Sparkline, StatTile, StatusChip } from "@/components/ui";
-import { CHANNEL_IDS, dailyTotals, previousRange, salesByProduct } from "@/lib/data/engine";
+import { CHANNEL_IDS, comparer, dailyTotals, previousRange, salesByProduct } from "@/lib/data/engine";
 import { connectedChannels } from "@/lib/data/model";
 import { useDataset, useFilters, useMetrics } from "@/lib/data/hooks";
 import { downloadCsv } from "@/lib/csv";
@@ -32,6 +32,9 @@ export default function SalesPage() {
   const days = diffDays(f.to, f.from) + 1;
   const metricsById = useMemo(() => new Map(metrics.map((m) => [m.product.id, m])), [metrics]);
   const prevById = useMemo(() => new Map(prev.map((p) => [p.product.id, p])), [prev]);
+  const cmp = useMemo(() => comparer(ds, f), [ds, f]);
+  // per product: was every sales point behind its sales recording through the earlier period?
+  const cmpById = useMemo(() => new Map(ds.products.map((p, pi) => [p.id, cmp(undefined, pi)])), [ds, cmp]);
 
   const total = sales.reduce((a, s) => a + s.value, 0);
   const units = sales.reduce((a, s) => a + s.qty, 0);
@@ -47,13 +50,13 @@ export default function SalesPage() {
         category: (r) => r.product.category,
         units: (r) => r.qty,
         value: (r) => r.value,
-        change: (r) => pctChange(r.value, prevById.get(r.product.id)?.value ?? 0) ?? -9999,
+        change: (r) => (cmpById.get(r.product.id) ? pctChange(r.value, prevById.get(r.product.id)?.value ?? 0) : null) ?? -9999,
         perday: (r) => r.qty / days,
       },
       sort.key,
       sort.dir,
     );
-  }, [sales, showZero, prevById, sort, days]);
+  }, [sales, showZero, prevById, cmpById, sort, days]);
 
   const onSort = (key: string) => setSort((s) => ({ key, dir: s.key === key && s.dir === "desc" ? "asc" : "desc" }));
 
@@ -79,7 +82,7 @@ export default function SalesPage() {
       <FilterBar right={<Button icon={<Download size={14} />} onClick={exportCsv} disabled={IS_PREVIEW} disabledReason={PREVIEW_NO_DOWNLOAD}>Export CSV</Button>} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Sales value" value={fmtMoneyShort(total)} sub={<><Delta pct={pctChange(total, prevTotal)} /> vs previous {days} days</>} />
+        <StatTile label="Sales value" value={fmtMoneyShort(total)} sub={cmp() ? <><Delta pct={pctChange(total, prevTotal)} /> vs previous {days} days</> : <Delta pct={null} incomplete />} />
         <StatTile label="Units sold" value={fmtInt(units)} sub={`${fmtInt(units / days)} a day`} />
         <StatTile label="Products sold" value={`${sold} of ${sales.length}`} sub="with at least one sale" />
         <StatTile label="Average order line" value={units ? fmtMoney(total / units) : "—"} sub="value per unit sold" />
@@ -142,7 +145,7 @@ export default function SalesPage() {
                       <td className="num font-medium">{fmtMoneyShort(r.value)}</td>
                       <td className="num text-ink-2">{total ? fmtPct((r.value / total) * 100) : "—"}</td>
                       <td className="num">
-                        <Delta pct={pctChange(r.value, prevById.get(r.product.id)?.value ?? 0)} />
+                        <Delta pct={pctChange(r.value, prevById.get(r.product.id)?.value ?? 0)} incomplete={!cmpById.get(r.product.id)} short />
                       </td>
                       <td>
                         <ChannelSplitBar parts={channels.map((c) => ({ channel: c, value: r.byChannel[c].qty }))} />

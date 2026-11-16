@@ -64,6 +64,12 @@ export function rangeIndexes(ds: Dataset, from: string, to: string): [number, nu
   return [Math.max(0, diffDays(from, first)), Math.min(ds.days.length - 1, diffDays(to, first))];
 }
 
+/** `comparable` for the period before `f`'s range, with extra filters (a channel, a sales point) or one product. */
+export function comparer(ds: Dataset, f: Filters): (extra?: Partial<Filters>, pi?: number) => boolean {
+  const prevFrom = previousRange(f.from, f.to).from;
+  return (extra = {}, pi) => comparable(ds, { ...f, ...extra }, { from: f.from, to: f.to }, prevFrom, pi);
+}
+
 export function previousRange(from: string, to: string): { from: string; to: string } {
   const len = diffDays(to, from) + 1;
   return { from: addDays(from, -len), to: addDays(from, -1) };
@@ -183,23 +189,88 @@ export interface RateBreakdown {
   byChannel: Partial<Record<ChannelId, number>>;
 }
 
-/** Daily rate over the picked sources: each channel over its own history, then added up. */
+/** The day a sales point began recording sales: its own first day (live data), else its channel's. */
+export function sourceStart(ds: Dataset, s: Source): string | null {
+  return s.dataFrom ?? ds.channels.find((c) => c.id === s.channel)?.dataFrom ?? null;
+}
+
+export interface SourceGroup {
+  channel: ChannelId;
+  /** The day these sales points began recording (null = never). */
+  from: string | null;
+  sources: number[];
+}
+
+/**
+ * The picked sales points grouped by channel and the day they began recording. A clinic that joined the CRM
+ * in October is measured from October: counting its earlier weeks as zero sales would understate its rate.
+ */
+export function sourceGroups(ds: Dataset, pick: (s: Source) => boolean): SourceGroup[] {
+  const groups = new Map<string, SourceGroup>();
+  ds.sources.forEach((s, si) => {
+    if (!pick(s)) return;
+    const from = sourceStart(ds, s);
+    const key = `${s.channel}|${from}`;
+    const g = groups.get(key) ?? { channel: s.channel, from, sources: [] };
+    g.sources.push(si);
+    groups.set(key, g);
+  });
+  return [...groups.values()];
+}
+
+/** Days of data a group has for this product (the group's start or the product's launch, whichever is later). */
+export function groupHistoryDays(ds: Dataset, p: Product, from: string | null): number {
+  return from ? Math.min(historyDays(ds, p), Math.max(1, diffDays(ds.today, from) + 1)) : 0;
+}
+
+/** Daily rate over the picked sources: each group of sales points over its own history, then added up. */
 export function rateFor(ds: Dataset, settings: FormulaSettings, pi: number, pick: (s: Source) => boolean, kind: "sold" | "used"): RateBreakdown {
   const p = ds.products[pi]!;
   const out: RateBreakdown = { rate: 0, avg7: 0, avg30: 0, avg90: 0, isNew: historyDays(ds, p) < 30, byChannel: {} };
-  for (const ch of CHANNEL_IDS) {
-    if (!ds.sources.some((s) => s.channel === ch && pick(s))) continue;
-    const hd = channelHistoryDays(ds, p, ch);
+  const arrs = kind === "sold" ? ds.sold[pi]! : ds.used[pi]!;
+  for (const g of sourceGroups(ds, pick)) {
+    const hd = groupHistoryDays(ds, p, g.from);
     if (hd <= 0) continue;
-    const r = dailyRate(seriesFor(ds, pi, (s) => s.channel === ch && pick(s), kind), settings, { inStock: ds.inStock?.[pi], historyDays: hd });
+    const series = new Array<number>(ds.days.length).fill(0);
+    for (const si of g.sources) {
+      const a = arrs[si]!;
+      for (let d = 0; d < a.length; d++) series[d]! += a[d]!;
+    }
+    const r = dailyRate(series, settings, { inStock: ds.inStock?.[pi], historyDays: hd });
     out.rate += r.rate;
     out.avg7 += r.avg7;
     out.avg30 += r.avg30;
     out.avg90 += r.avg90;
-    if (r.rate) out.byChannel[ch] = r.rate;
+    if (r.rate) out.byChannel[g.channel] = Math.round(((out.byChannel[g.channel] ?? 0) + r.rate) * 10000) / 10000;
   }
   out.rate = Math.round(out.rate * 10000) / 10000;
   return out;
+}
+
+/**
+ * Can sales in `range` be compared with the period before it (starting `prevFrom`)? Only when the sales points
+ * behind them were all recording by then — otherwise a "rise" is a clinic joining the CRM, not growth.
+ * Points that make under 5% of the selected sales are ignored. `pi` narrows the check to one product.
+ */
+export function comparable(ds: Dataset, f: Filters, range: { from: string; to: string }, prevFrom: string, pi?: number): boolean {
+  const mask = sourceMask(ds, f);
+  const s = Math.max(0, diffDays(range.from, ds.days[0]!));
+  const e = Math.min(ds.days.length - 1, diffDays(range.to, ds.days[0]!));
+  let total = 0;
+  let late = 0;
+  const products = pi === undefined ? ds.products.map((_, i) => i) : [pi];
+  ds.sources.forEach((src, si) => {
+    if (!mask[si]) return;
+    let v = 0;
+    for (const p of products) {
+      const a = ds.value[p]![si]!;
+      for (let d = s; d <= e; d++) v += a[d]!;
+    }
+    total += v;
+    const start = sourceStart(ds, src);
+    if (!start || start > prevFrom) late += v;
+  });
+  return total <= 0 || late / total < 0.05;
 }
 
 export function channelRates(ds: Dataset, settings: FormulaSettings, pi: number): Record<ChannelId, number> {

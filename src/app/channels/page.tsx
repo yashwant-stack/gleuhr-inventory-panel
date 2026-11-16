@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { SalesTrendChart } from "@/components/charts";
 import { FilterBar } from "@/components/FilterBar";
 import { Card, CardHeader, ChannelDot, channelLabel, Delta, PageHeader, Segmented } from "@/components/ui";
-import { dailyTotals, previousRange, projectionValueByChannel, salesByProduct, type ProductSales } from "@/lib/data/engine";
+import { comparer, dailyTotals, previousRange, projectionValueByChannel, salesByProduct, type ProductSales } from "@/lib/data/engine";
 import { useDataset, useFilters } from "@/lib/data/hooks";
 import { connectedChannels } from "@/lib/data/model";
 import { diffDays, fmtDay, fmtRange } from "@/lib/dates";
@@ -31,6 +31,7 @@ export default function ChannelsPage() {
   const sales = useMemo(() => salesByProduct(ds, f), [ds, f]);
   const prev = useMemo(() => salesByProduct(ds, f, previousRange(f.from, f.to)), [ds, f]);
   const proj30 = useMemo(() => projectionValueByChannel(ds, settings, 30), [ds, settings]);
+  const cmp = useMemo(() => comparer(ds, f), [ds, f]);
   const days = diffDays(f.to, f.from) + 1;
 
   const sum = (rows: ProductSales[], chs: ChannelId[], k: "value" | "qty") => rows.reduce((a, s) => a + chs.reduce((b, c) => b + s.byChannel[c][k], 0), 0);
@@ -101,7 +102,7 @@ export default function ChannelsPage() {
                 {fmtInt(q)} units · {total ? Math.round((v / total) * 100) : 0}% share
               </div>
               <div className="mt-1 text-[12px]">
-                <Delta pct={pctChange(v, pv)} /> <span className="text-muted">vs prev.</span>
+                <Delta pct={pctChange(v, pv)} incomplete={!cmp({ channels: c.id === "d2c" ? d2c : [c.id] })} /> <span className="text-muted">vs prev.</span>
               </div>
               <div className="mt-1.5 border-t border-line pt-1.5 text-[11.5px] text-muted">Next 30 days ≈ {fmtMoneyShort(p30)}</div>
             </button>
@@ -158,7 +159,7 @@ export default function ChannelsPage() {
                       <td className="num">{fmtInt(t.q)}</td>
                       <td className="num">{fmtMoneyShort(t.v)}</td>
                       <td className="num">
-                        <Delta pct={pctChange(t.v, pv)} />
+                        <Delta pct={pctChange(t.v, pv)} incomplete={!cmp({ channels: picked }, ds.products.indexOf(t.s.product))} short />
                       </td>
                     </tr>
                   );
@@ -205,7 +206,7 @@ export default function ChannelsPage() {
                   <td className="num">{fmtInt(r.q)}</td>
                   <td className="num">{fmtInt(r.q / days)}</td>
                   <td className="num">
-                    <Delta pct={pctChange(r.v, r.pv)} />
+                    <Delta pct={pctChange(r.v, r.pv)} incomplete={!cmp({ channels: ["clinic"], points: [`clinic:${r.c.id}`] })} short />
                   </td>
                   <td className="max-w-[240px] truncate text-ink-2">
                     {r.best.name} <span className="text-muted">({fmtInt(r.best.q)})</span>

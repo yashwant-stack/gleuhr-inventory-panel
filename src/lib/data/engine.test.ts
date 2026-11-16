@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_FORMULA_SETTINGS as S } from "../domain/types";
 import { getDataset } from "../mock/dataset";
-import { allTransfers, channelRates, computeMetrics, dailyTotals, locationBreakdown, rateFor, salesByProduct, sendToClinics, type Filters } from "./engine";
+import { allTransfers, channelRates, comparable, computeMetrics, dailyTotals, locationBreakdown, rateFor, salesByProduct, sendToClinics, type Filters } from "./engine";
 import { decodeDataset, encodeDataset, type Dataset } from "./model";
 
 const ds = getDataset();
@@ -97,6 +97,50 @@ describe("rates per channel over each channel's own history", () => {
     };
     // A plain average over the summed series would give 2 + 0.2×2×(80/90) + … ≈ 3.96; per channel it is exactly 4.
     expect(rateFor(tiny, S, 0, () => true, "used").rate).toBe(4);
+  });
+
+  // Live data: one clinic recorded product sales from 28 Aug, the other eleven joined the CRM in October.
+  const staggered = (lateShare: number): Dataset => {
+    const n = 180;
+    const days = Array.from({ length: n }, (_, i) => new Date(Date.UTC(2026, 4, 19 + i)).toISOString().slice(0, 10));
+    const early = new Int32Array(n);
+    const late = new Int32Array(n);
+    const earlyV = new Float64Array(n);
+    const lateV = new Float64Array(n);
+    for (let d = 100; d < n; d++) (early[d] = 3), (earlyV[d] = 3000);
+    for (let d = 150; d < n; d++) (late[d] = 2), (lateV[d] = 1000 * lateShare);
+    return {
+      ...ds,
+      days,
+      today: days[n - 1]!,
+      products: [{ ...ds.products[0]!, launchedOn: days[0]! }],
+      channels: ds.channels.map((c) => ({ ...c, dataFrom: c.id === "clinic" ? days[100]! : null, connected: c.id === "clinic" })),
+      sources: [
+        { id: "clinic:1", channel: "clinic", locationId: "z-chandigarh", clinicId: "1", label: "early", dataFrom: days[100]! },
+        { id: "clinic:2", channel: "clinic", locationId: "z-ludhiana", clinicId: "2", label: "late", dataFrom: days[150]! },
+      ],
+      sold: [[early, late]],
+      used: [[early, late]],
+      value: [[earlyV, lateV]],
+      inStock: undefined,
+    };
+  };
+
+  it("a clinic that joined the CRM late is measured from the day it joined", () => {
+    const t = staggered(1);
+    // early clinic: 3/day over its 80 days; late clinic: 2/day over its 30 days → 5/day.
+    // Measured over the clinic channel's 80 days, the late clinic would count 50 days of zeros (≈ 4.1/day).
+    expect(rateFor(t, S, 0, () => true, "used").rate).toBe(5);
+    expect(rateFor(t, S, 0, () => true, "used").byChannel.clinic).toBe(5);
+  });
+
+  it("no growth % when the earlier period was before some sales points joined (a join is not growth)", () => {
+    const t = staggered(1);
+    const f: Filters = { ...ALL, from: t.days[150]!, to: t.today };
+    const prevFrom = t.days[120]!;
+    expect(comparable(t, f, { from: f.from, to: f.to }, prevFrom)).toBe(false); // the late clinic is 18% of sales
+    expect(comparable(t, { ...f, points: ["clinic:1"] }, { from: f.from, to: f.to }, prevFrom)).toBe(true); // the early one alone compares
+    expect(comparable(staggered(0.1), f, { from: f.from, to: f.to }, prevFrom)).toBe(true); // a joiner under 5% of sales is ignored
   });
 });
 

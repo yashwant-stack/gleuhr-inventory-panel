@@ -4,7 +4,7 @@ import "server-only";
 // (when, ok, rows written, Zoho calls made, a plain note), which the Data health page shows.
 import { addDays, diffDays } from "../lib/dates";
 import { type Db, num } from "./db";
-import { readClinics, readFlows, readProducts, readPushHealth } from "./crm";
+import type { CrmSource } from "./crm";
 import {
   listAll,
   locationKind,
@@ -44,7 +44,7 @@ export interface JobResult {
 
 export interface SyncDeps {
   panel: Db;
-  crm?: Db | null;
+  crm?: CrmSource | null;
   zohoCfg?: ZohoConfig | null;
   fetchFn?: typeof fetch;
   now?: Date;
@@ -245,22 +245,31 @@ async function zohoAccess(panel: Db, z: ZohoClient): Promise<JobOutput> {
   return { rows: results.length + poLines, note: results.map((r) => `${r.area}: ${r.ok ? "ok" : r.note}`).join(" · ") };
 }
 
-async function crmReference(panel: Db, crm: Db): Promise<JobOutput> {
-  const clinics = await readClinics(crm);
+async function crmReference(panel: Db, crm: CrmSource): Promise<JobOutput> {
+  const clinics = await crm.clinics();
   await panel.query(
     `insert into crm_clinics (crm_clinic_id, name, active, zoho_location_id, updated_at)
      select r.id::bigint, r.name, r.active, r.loc, now() from jsonb_to_recordset($1::text::jsonb) as r(id text, name text, active boolean, loc text)
      on conflict (crm_clinic_id) do update set name = excluded.name, active = excluded.active, zoho_location_id = excluded.zoho_location_id, updated_at = now()`,
     [JSON.stringify(clinics.map((c) => ({ id: c.crm_clinic_id, name: c.name, active: c.active, loc: c.zoho_location_id })))],
   );
-  const products = await readProducts(crm);
-  const rows = products.map((p) => ({ id: p.crm_product_id, name: p.name, sku: p.sku, item: p.zoho_item_id?.trim() || null, price: p.price, active: p.active, created: p.created_on }));
+  const products = await crm.products();
+  const rows = products.map((p) => ({
+    id: p.crm_product_id,
+    name: p.name,
+    sku: p.sku,
+    item: p.zoho_item_id?.trim() || null,
+    price: p.price,
+    active: p.active,
+    created: p.created_on,
+    cat: p.category,
+  }));
   await panel.query(
-    `insert into crm_products (crm_product_id, name, sku, zoho_item_id, price, active, created_on, updated_at)
-     select r.id::bigint, r.name, r.sku, r.item, r.price, r.active, r.created::date, now()
-     from jsonb_to_recordset($1::text::jsonb) as r(id text, name text, sku text, item text, price numeric, active boolean, created text)
+    `insert into crm_products (crm_product_id, name, sku, zoho_item_id, price, active, created_on, category, updated_at)
+     select r.id::bigint, r.name, r.sku, r.item, r.price, r.active, r.created::date, r.cat, now()
+     from jsonb_to_recordset($1::text::jsonb) as r(id text, name text, sku text, item text, price numeric, active boolean, created text, cat text)
      on conflict (crm_product_id) do update set name = excluded.name, sku = excluded.sku, zoho_item_id = excluded.zoho_item_id,
-       price = excluded.price, active = excluded.active, created_on = excluded.created_on, updated_at = now()`,
+       price = excluded.price, active = excluded.active, created_on = excluded.created_on, category = excluded.category, updated_at = now()`,
     [JSON.stringify(rows)],
   );
   await panel.query("delete from crm_products where not (crm_product_id = any (select (jsonb_array_elements_text($1::text::jsonb))::bigint))", [
@@ -273,7 +282,7 @@ async function crmReference(panel: Db, crm: Db): Promise<JobOutput> {
   };
 }
 
-async function crmFlows(panel: Db, crm: Db, now: Date): Promise<JobOutput> {
+async function crmFlows(panel: Db, crm: CrmSource, now: Date): Promise<JobOutput> {
   const today = istToday(now);
   const historyDays = await setting(panel, "panel.history_days", 180);
   const [{ n = 0 } = {}] = await panel.query<{ n: number }>("select count(*)::int as n from daily_flows");
@@ -281,7 +290,7 @@ async function crmFlows(panel: Db, crm: Db, now: Date): Promise<JobOutput> {
   let rows = 0;
   for (let start = from; start <= today; start = addDays(start, 15)) {
     const end = diffDays(today, start) < 15 ? addDays(today, 1) : addDays(start, 15);
-    const flows = await readFlows(crm, `${start}T00:00:00+05:30`, `${end}T00:00:00+05:30`);
+    const flows = await crm.flows(`${start}T00:00:00+05:30`, `${end}T00:00:00+05:30`);
     await panel.query(
       `insert into daily_flows (day, crm_product_id, crm_clinic_id, channel, kind, qty, value, movements)
        select r.day::date, r.p::bigint, r.c::bigint, r.ch, r.k, r.q, r.v, r.m
@@ -301,8 +310,8 @@ async function crmFlows(panel: Db, crm: Db, now: Date): Promise<JobOutput> {
   return { rows, note: `${n === 0 ? "backfilled" : "refreshed"} ${from} → ${today}` };
 }
 
-async function crmHealth(panel: Db, crm: Db, now: Date): Promise<JobOutput> {
-  const rows = await readPushHealth(crm, new Date(now.getTime() - 30 * 86_400_000).toISOString());
+async function crmHealth(panel: Db, crm: CrmSource, now: Date): Promise<JobOutput> {
+  const rows = await crm.pushHealth(new Date(now.getTime() - 30 * 86_400_000).toISOString());
   await panel.query("delete from push_health");
   await panel.query(
     `insert into push_health (crm_clinic_id, location_name, failed, first_failed, last_failed, top_error, checked_at)
@@ -315,7 +324,24 @@ async function crmHealth(panel: Db, crm: Db, now: Date): Promise<JobOutput> {
 
 // ── orchestrator ──────────────────────────────────────────────────────────────
 
+/** Thrown when another sync holds the lock (started under 15 minutes ago and not finished). */
+export class SyncBusy extends Error {}
+
 export async function runSync(jobs: JobName[], deps: SyncDeps): Promise<JobResult[]> {
+  const [got] = await deps.panel.query<{ id: number }>(
+    `insert into sync_lock (id, started_at) values (1, now())
+     on conflict (id) do update set started_at = now() where sync_lock.started_at < now() - interval '15 minutes'
+     returning id`,
+  );
+  if (!got) throw new SyncBusy("Another sync is running; this one was not started.");
+  try {
+    return await runJobs(jobs, deps);
+  } finally {
+    await deps.panel.query("delete from sync_lock where id = 1");
+  }
+}
+
+async function runJobs(jobs: JobName[], deps: SyncDeps): Promise<JobResult[]> {
   const now = deps.now ?? new Date();
   const zoho = deps.zohoCfg
     ? zohoClient(deps.panel, deps.zohoCfg, { fetchFn: deps.fetchFn, clock: deps.clock, sleep: deps.sleep, deadline: deps.deadline })

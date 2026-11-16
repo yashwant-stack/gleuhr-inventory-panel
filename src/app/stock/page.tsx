@@ -6,6 +6,7 @@ import { Suspense, useMemo, useState } from "react";
 import { FilterBar } from "@/components/FilterBar";
 import { Button, Card, CardHeader, Empty, Note, PageHeader, Segmented, sortRows, SortTh, StatTile, STATUS_META, StatusChip } from "@/components/ui";
 import { allTransfers, productMatches, sendToClinics, STATUS_ORDER } from "@/lib/data/engine";
+import { belowZeroStock } from "@/lib/data/model";
 import { useDataset, useFilters, useMetrics } from "@/lib/data/hooks";
 import { downloadCsv } from "@/lib/csv";
 import { IS_PREVIEW, PREVIEW_NO_DOWNLOAD } from "@/lib/platform";
@@ -49,6 +50,7 @@ function StockHealth() {
   const transfers = useMemo(() => allTransfers(ds, settings, metrics), [ds, settings, metrics]);
   const sends = useMemo(() => sendToClinics(ds, settings, metrics), [ds, settings, metrics]);
   const unreadable = ds.locations.filter((l) => !l.readable);
+  const belowZero = belowZeroStock(ds);
   const over = visible.filter((m) => m.status === "overstock").sort((a, b) => b.excess * b.product.cost - a.excess * a.product.cost);
 
   const toggle = (s: StockStatus) => setStatuses((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
@@ -94,6 +96,14 @@ function StockHealth() {
         <div className="mb-3">
           <Note tone="warn">
             Stock totals leave out {unreadable.map((l) => l.name).join(", ")}: the Zoho login isn’t allowed to read {unreadable.length === 1 ? "it" : "them"} yet. See Data health.
+          </Note>
+        </div>
+      ) : null}
+      {belowZero.length ? (
+        <div className="mb-3">
+          <Note tone="warn">
+            Zoho shows stock below zero in {belowZero.length === 1 ? "one place" : `${belowZero.length} places`}, e.g. {belowZero[0]!.product} at {belowZero[0]!.location} ({fmtInt(belowZero[0]!.qty)}). Stock went out
+            before Zoho recorded it coming in (a receipt or transfer not entered yet). Totals use Zoho’s numbers as they are. See Data health.
           </Note>
         </div>
       ) : null}

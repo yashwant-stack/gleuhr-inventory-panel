@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { crmDb, NotConfigured, panelDb } from "@/server/db";
-import { DAILY_JOBS, FREQUENT_JOBS, runSync, type JobName } from "@/server/sync";
+import { panelDb } from "@/server/db";
+import { crmSource } from "@/server/sources";
+import { DAILY_JOBS, FREQUENT_JOBS, runSync, SyncBusy, type JobName } from "@/server/sync";
 import { zohoConfig } from "@/server/zoho";
 
 export const runtime = "nodejs";
@@ -20,18 +21,14 @@ export async function GET(req: Request) {
   const jobs: JobName[] = run === "daily" ? DAILY_JOBS : run === "all" ? [...FREQUENT_JOBS, ...DAILY_JOBS] : FREQUENT_JOBS;
   try {
     const panel = panelDb();
-    let crm = null;
-    try {
-      crm = crmDb();
-    } catch (e) {
-      if (!(e instanceof NotConfigured)) throw e;
-    }
+    const crm = crmSource();
     // No Zoho call starts after the time budget (default 250 s, inside maxDuration 300 s), so the run
     // finishes and logs itself. On a plan that allows less time per run, set SYNC_TIME_BUDGET_SECONDS.
     const budget = Number(process.env.SYNC_TIME_BUDGET_SECONDS) > 0 ? Number(process.env.SYNC_TIME_BUDGET_SECONDS) : 250;
     const results = await runSync(jobs, { panel, crm, zohoCfg: zohoConfig(), deadline: Date.now() + budget * 1000 });
     return NextResponse.json({ ok: results.every((r) => r.ok || r.skipped), results });
   } catch (e) {
+    if (e instanceof SyncBusy) return NextResponse.json({ ok: false, error: e.message }, { status: 409 });
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 503 });
   }
 }

@@ -51,6 +51,7 @@ interface LinkRow {
   crm_price: unknown;
   crm_active: boolean;
   created_on: string | null;
+  crm_category: string | null;
   /** The Zoho item the CRM links to (null = none). */
   linked_item: string | null;
   /** That item as the panel knows it from Zoho (null = Zoho has no such item). */
@@ -107,7 +108,8 @@ export async function buildDataset(db: Db, now = new Date()): Promise<Dataset> {
   // Every CRM product with its Zoho item (if any).
   const links = await db.query<LinkRow>(
     `select cp.crm_product_id::text as crm_product_id, cp.name as crm_name, cp.price as crm_price, cp.active as crm_active,
-            cp.created_on::text as created_on, cp.zoho_item_id as linked_item, p.zoho_item_id, p.in_zoho, p.track_inventory
+            cp.created_on::text as created_on, cp.category as crm_category, cp.zoho_item_id as linked_item,
+            p.zoho_item_id, p.in_zoho, p.track_inventory
      from crm_products cp left join products p on p.zoho_item_id = cp.zoho_item_id
      order by cp.crm_product_id`,
   );
@@ -162,7 +164,8 @@ export async function buildDataset(db: Db, now = new Date()): Promise<Dataset> {
       id: String(p.zoho_item_id),
       sku: (p.sku as string | null) ?? "",
       name: String(p.name),
-      category: (p.category as string | null) || "Uncategorised",
+      // Zoho's category, else the online CRM's (Zoho's items carry none today)
+      category: (p.category as string | null) || crm.map((c) => c.crm_category).find(Boolean) || "Uncategorised",
       price,
       // Zoho's purchase price of ₹10 or less is a placeholder on many items: fall back to a share of the selling price.
       cost: purchase > 10 ? purchase : Math.round(price * costRatio),
@@ -182,11 +185,15 @@ export async function buildDataset(db: Db, now = new Date()): Promise<Dataset> {
   // A channel's data starts at its first sale of any product (the day the CRMs began recording it).
   // A product's history starts when it was added to the CRM, or at its first stock movement if earlier.
   const channelFirst: Record<string, string> = {};
+  const sourceFirst: Record<string, string> = {}; // channel:clinic → first sale of any product
   const productFirst: Record<number, string> = {};
   const earlier = (a: string | undefined, b: string | null | undefined) => (!a ? (b ?? undefined) : b && b < a ? b : a);
   for (const f of flowRows) {
     const day = String(f.day);
-    if (f.kind === "sale") channelFirst[String(f.channel)] = earlier(channelFirst[String(f.channel)], day)!;
+    if (f.kind === "sale") {
+      channelFirst[String(f.channel)] = earlier(channelFirst[String(f.channel)], day)!;
+      sourceFirst[`${f.channel}:${f.c}`] = earlier(sourceFirst[`${f.channel}:${f.c}`], day)!;
+    }
     const pi = pIndex.get(String(f.p));
     if (pi !== undefined) productFirst[pi] = earlier(productFirst[pi], day)!;
   }
@@ -206,17 +213,15 @@ export async function buildDataset(db: Db, now = new Date()): Promise<Dataset> {
     if (sIndex.has(key) || !pIndex.has(String(f.p)) || !USAGE.has(String(f.kind))) continue;
     const clinic = clinicById.get(String(f.c));
     const locationId = clinic?.zohoLocationId ?? primary.id;
-    const atWarehouse = locationId === primary.id;
+    // The CRM's warehouse "clinic" (its Zoho location is the primary one) is where online orders are dispatched
+    // from; any other clinic is a real clinic, even when unlinked and so booked on the primary location.
+    const warehouseClinic = clinic?.zohoLocationId === primary.id;
     const channel = f.channel as ChannelId;
     const clinicName = clinic?.name ?? `Clinic ${f.c}`;
-    const label =
-      channel === "clinic"
-        ? clinic?.zohoLocationId
-          ? clinicName
-          : `${clinicName} (booked on ${primary.name})`
-        : `${CHANNELS.find((c) => c.id === channel)?.short ?? channel} · ${atWarehouse ? `${primary.name} dispatch` : clinicName}`;
+    const place = warehouseClinic ? `${primary.name} dispatch` : clinic?.zohoLocationId ? clinicName : `${clinicName} (booked on ${primary.name})`;
+    const label = channel === "clinic" ? place : `${CHANNELS.find((c) => c.id === channel)?.short ?? channel} · ${place}`;
     sIndex.set(key, sources.length);
-    sources.push({ id: key, channel, locationId, clinicId: channel === "clinic" || !atWarehouse ? String(f.c) : null, label });
+    sources.push({ id: key, channel, locationId, clinicId: channel !== "clinic" && warehouseClinic ? null : String(f.c), label, dataFrom: sourceFirst[key] ?? null });
   }
 
   const n = days.length;

@@ -12,6 +12,7 @@
     "build:preview": "vite build --config preview/vite.config.mts && node preview/make-artifact.mjs"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.2.17",
     "@fontsource/hanken-grotesk": "^5.1.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
@@ -24,7 +25,6 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.2.17",
     "@tailwindcss/postcss": "^4.1.11",
     "@tailwindcss/vite": "^4.1.11",
     "@types/node": "^22.10.5",

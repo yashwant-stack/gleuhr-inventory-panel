@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { SalesTrendChart } from "@/components/charts";
 import { FilterBar } from "@/components/FilterBar";
 import { Card, CardHeader, ChannelDot, channelLabel, Delta, PageHeader, Segmented, StatTile, StatusChip, CHANNEL_COLOR } from "@/components/ui";
-import { CHANNEL_IDS, dailyTotals, previousRange, projectionValueByChannel, salesByProduct, urgency } from "@/lib/data/engine";
+import { CHANNEL_IDS, comparer, dailyTotals, previousRange, projectionValueByChannel, salesByProduct, urgency } from "@/lib/data/engine";
 import { connectedChannels } from "@/lib/data/model";
 import { useDataset, useFilters, useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
 import { cycleState, submissionStatus } from "@/lib/data/plans";
@@ -29,6 +29,7 @@ export default function HomePage() {
   const channels = (f.channels.length ? f.channels : connectedChannels(ds));
   const sales = useMemo(() => salesByProduct(ds, f), [ds, f]);
   const prev = useMemo(() => salesByProduct(ds, f, previousRange(f.from, f.to)), [ds, f]);
+  const cmp = useMemo(() => comparer(ds, f), [ds, f]);
   const points = useMemo(() => dailyTotals(ds, f), [ds, f]);
   const proj = useMemo(() => [7, 15, 30].map((h) => ({ h, v: projectionValueByChannel(ds, settings, h) })), [ds, settings]);
 
@@ -60,8 +61,8 @@ export default function HomePage() {
       <FilterBar search={false} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <StatTile label={`Sales · ${fmtRange(f.from, f.to)}`} value={fmtMoneyShort(total)} sub={<><Delta pct={pctChange(total, prevTotal)} /> vs previous {days} days</>} />
-        <StatTile label="Units sold" value={fmtInt(units)} sub={<>{fmtRate(units / days)} a day · <Delta pct={pctChange(units, prevUnits)} /></>} />
+        <StatTile label={`Sales · ${fmtRange(f.from, f.to)}`} value={fmtMoneyShort(total)} sub={cmp() ? <><Delta pct={pctChange(total, prevTotal)} /> vs previous {days} days</> : <Delta pct={null} incomplete />} />
+        <StatTile label="Units sold" value={fmtInt(units)} sub={<>{fmtRate(units / days)} a day · <Delta pct={pctChange(units, prevUnits)} incomplete={!cmp()} /></>} />
         <StatTile href="/stock?status=urgent" tone="critical" label="Critical + Low products" value={critical.length + low.length} sub={`${critical.length} critical · ${low.length} low`} />
         <StatTile href="/stock?status=overstock" tone="over" label="Overstock products" value={over.length} sub={`${fmtMoneyShort(stuck)} stuck at cost`} />
         <StatTile href={role.access === "planner" ? undefined : "/indent"} label="Suggested order now" value={fmtMoneyShort(toOrder)} sub={`at cost, ${critical.length + low.length} products`} />
@@ -94,7 +95,7 @@ export default function HomePage() {
                     <div className="h-2 rounded-full" style={{ width: `${(v / maxCh) * 100}%`, background: CHANNEL_COLOR[c] }} />
                   </div>
                   <span className="w-14 text-right text-[12px]">
-                    <Delta pct={pctChange(v, pv)} />
+                    <Delta pct={pctChange(v, pv)} incomplete={!cmp({ channels: [c] })} short />
                   </span>
                 </div>
               </li>

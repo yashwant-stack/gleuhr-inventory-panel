@@ -6,7 +6,7 @@ import { dailyRate, gapPct, isGapFlagged, projection } from "../domain/formulas"
 import type { ChannelId, FormulaSettings, Product } from "../domain/types";
 import { CYCLES, SEED_SUBMISSIONS, type PlanCycle } from "../mock/plans";
 import type { PlanPart, RoleId } from "../roles";
-import { avgUnitValue, CHANNEL_IDS, channelHistoryDays, rateFor, type ProductMetrics } from "./engine";
+import { avgUnitValue, CHANNEL_IDS, groupHistoryDays, rateFor, sourceGroups, type ProductMetrics } from "./engine";
 import { connectedChannels, type Dataset, type Source } from "./model";
 
 export interface PlanLine {
@@ -88,6 +88,10 @@ export function planBaseline(ds: Dataset, settings: FormulaSettings, part: PlanP
   return partKeys(ds, part).map(({ key, label }) => {
     const pick = keyPick(key);
     const ch = keyChannel(key);
+    const groups = sourceGroups(ds, pick);
+    // growth vs the 30 days before: only when every sales point of the line was recording through them
+    const prevStart = ds.days[Math.max(0, cut - 60)]!;
+    const complete = groups.every((g) => g.from !== null && g.from <= prevStart);
     let last30 = 0;
     let prev30 = 0;
     let last30Value = 0;
@@ -110,12 +114,20 @@ export function planBaseline(ds: Dataset, settings: FormulaSettings, part: PlanP
         last30Value += values[i]!;
       }
       for (let i = Math.max(0, cut - 60); i < cut - 30; i++) prev30 += series[i]!;
-      const hd = Math.max(0, channelHistoryDays(ds, p, ch) - lag);
-      if (hd <= 0) return;
-      const r = dailyRate(series, settings, { inStock: ds.inStock?.[pi]?.slice(0, cut), historyDays: hd }).rate;
-      const units = projection(r, days);
-      systemUnits += units;
-      systemValue += units * avgUnitValue(ds, pi, ch);
+      // each group of sales points over its own history (a clinic that joined the CRM late is measured from then)
+      for (const g of groups) {
+        const hd = Math.max(0, groupHistoryDays(ds, p, g.from) - lag);
+        if (hd <= 0) continue;
+        const gs = new Array<number>(cut).fill(0);
+        for (const si of g.sources) {
+          const a = ds.sold[pi]![si]!;
+          for (let d = 0; d < cut; d++) gs[d]! += a[d]!;
+        }
+        const r = dailyRate(gs, settings, { inStock: ds.inStock?.[pi]?.slice(0, cut), historyDays: hd }).rate;
+        const units = projection(r, days);
+        systemUnits += units;
+        systemValue += units * avgUnitValue(ds, pi, ch);
+      }
     });
     return {
       key,
@@ -123,7 +135,7 @@ export function planBaseline(ds: Dataset, settings: FormulaSettings, part: PlanP
       last30,
       last30Value,
       perDay: last30 / 30,
-      growthPct: prev30 > 0 ? ((last30 - prev30) / prev30) * 100 : null,
+      growthPct: complete && prev30 > 0 ? ((last30 - prev30) / prev30) * 100 : null,
       systemUnits: Math.round(systemUnits),
       systemValue,
     };

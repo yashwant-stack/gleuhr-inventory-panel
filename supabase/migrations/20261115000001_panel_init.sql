@@ -88,8 +88,11 @@ create table if not exists crm_products (
   active boolean not null,
   -- the IST day the product was added to the CRM: the start of its sales history
   created_on date,
+  -- the online CRM's category (online_product_meta); Zoho's items carry none
+  category text,
   updated_at timestamptz not null default now()
 );
+alter table crm_products add column if not exists category text;
 create index if not exists crm_products_zoho on crm_products (zoho_item_id);
 
 create table if not exists crm_clinics (
@@ -181,6 +184,12 @@ create table if not exists sync_runs (
 );
 create index if not exists sync_runs_job on sync_runs (job, started_at desc);
 
+-- One sync at a time (a lock row, not a session lock: it works through a connection pool).
+create table if not exists sync_lock (
+  id integer primary key default 1 check (id = 1),
+  started_at timestamptz not null
+);
+
 -- One cached Zoho access token (1 hour), so each run does not mint a new one.
 create table if not exists zoho_token (
   id integer primary key default 1 check (id = 1),
@@ -194,6 +203,24 @@ create table if not exists zoho_calls (
   calls integer not null
 );
 
+-- ── staging for the CRM's REST path ─────────────────────────────────────────
+-- When the CRM is read through its REST API, a window's movements and the bills / orders / lines /
+-- offers they point to are copied here, the same sales query runs on them, and they are emptied again.
+create schema if not exists crm_stage;
+create table if not exists crm_stage.stock_movements (id bigint primary key, product_id bigint, clinic_id bigint, qty integer,
+  reason text, online_order_id bigint, product_sale_id bigint, created_at timestamptz);
+create table if not exists crm_stage.product_sales (id bigint primary key, complimentary boolean, total_amount numeric);
+create table if not exists crm_stage.product_sale_lines (id bigint primary key, product_sale_id bigint, product_id bigint, qty integer,
+  unit_price numeric, discount_pct numeric);
+create index if not exists crm_stage_psl on crm_stage.product_sale_lines (product_sale_id, product_id);
+create table if not exists crm_stage.online_orders (id bigint primary key, disc_mode text, round_off numeric);
+create table if not exists crm_stage.online_order_lines (id bigint primary key, order_id bigint, product_id bigint, qty integer,
+  disc_pct numeric, offer_id bigint, unit_price_hist numeric);
+create index if not exists crm_stage_ool on crm_stage.online_order_lines (order_id, product_id);
+create table if not exists crm_stage.online_shopify_orders (id bigint primary key, order_id bigint);
+create table if not exists crm_stage.online_offers (id bigint primary key, type text, bogo_type text, paid_pct numeric);
+create table if not exists crm_stage.retail_products (id bigint primary key, price numeric);
+
 insert into settings (key, value) values
   ('zoho.max_calls_per_minute', '10'),
   ('zoho.max_calls_per_day', '600'),
@@ -206,8 +233,14 @@ do $$
 declare t text;
 begin
   foreach t in array array['locations','products','stock_levels','stock_snapshots','purchase_orders','zoho_access','crm_products','crm_clinics',
-    'daily_flows','push_health','settings','indent_approvals','plan_submissions','notifications_log','sync_runs','zoho_token','zoho_calls']
+    'daily_flows','push_health','settings','indent_approvals','plan_submissions','notifications_log','sync_runs','zoho_token','zoho_calls',
+    'sync_lock']
   loop
     execute format('alter table %I enable row level security', t);
+  end loop;
+  foreach t in array array['stock_movements','product_sales','product_sale_lines','online_orders','online_order_lines',
+    'online_shopify_orders','online_offers','retail_products']
+  loop
+    execute format('alter table crm_stage.%I enable row level security', t);
   end loop;
 end $$;

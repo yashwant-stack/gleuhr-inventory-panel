@@ -157,7 +157,15 @@ export function StatTile({
   return <div className={cls}>{body}</div>;
 }
 
-export function Delta({ pct, invert = false }: { pct: number | null; invert?: boolean }) {
+const INCOMPLETE_WHY = "Some of these sales points began recording in the CRM during the earlier period, so a change would mostly show them joining, not growth.";
+
+export function Delta({ pct, invert = false, incomplete = false, short = false }: { pct: number | null; invert?: boolean; incomplete?: boolean; short?: boolean }) {
+  if (incomplete)
+    return (
+      <span className="text-muted" title={INCOMPLETE_WHY}>
+        {short ? "incomplete" : "earlier data incomplete"}
+      </span>
+    );
   if (pct === null || !Number.isFinite(pct)) return <span className="text-muted">no earlier data</span>;
   const up = pct >= 0;
   const good = invert ? !up : up;
