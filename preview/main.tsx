@@ -22,7 +22,9 @@ import SettingsPage from "@/app/settings/page";
 import StockPage from "@/app/stock/page";
 import { Shell } from "@/components/Shell";
 import { DatasetProvider } from "@/lib/data/hooks";
+import type { SnapshotBlob } from "@/lib/snapshot";
 import { usePathname } from "./shims/next-navigation";
+import { SnapshotGate } from "./snapshot";
 
 const PAGES: Record<string, ComponentType> = {
   "/": HomePage,
@@ -45,15 +47,30 @@ function RouteView() {
   return <Page key={path} />;
 }
 
+// The live-snapshot build carries the live data encrypted (see make-artifact.mjs); the plain build shows sample data.
+const SNAPSHOT = (window as Window & { __GLEUHR_SNAPSHOT__?: SnapshotBlob }).__GLEUHR_SNAPSHOT__;
+
 const root = document.getElementById("root");
 if (root) {
   createRoot(root).render(
     <StrictMode>
-      <DatasetProvider>
-        <Shell>
-          <RouteView />
-        </Shell>
-      </DatasetProvider>
+      {SNAPSHOT ? (
+        <SnapshotGate blob={SNAPSHOT}>
+          {(ds) => (
+            <DatasetProvider initial={ds}>
+              <Shell>
+                <RouteView />
+              </Shell>
+            </DatasetProvider>
+          )}
+        </SnapshotGate>
+      ) : (
+        <DatasetProvider>
+          <Shell>
+            <RouteView />
+          </Shell>
+        </DatasetProvider>
+      )}
     </StrictMode>,
   );
 }

@@ -92,10 +92,11 @@ About **190 Zoho calls a day** in total, against the panel's own ceiling of 600,
    - Its connection string becomes `CRM_DATABASE_URL`.
    - **Never the CRM's main login.**
 
-3. **Zoho:**
-   - Make a **new** client secret and refresh token. The ones shared in chat should be retired.
-   - Ideally use a Zoho user that can read every location, purchase orders and transfer orders.
-   - Today's login is refused on Mumbai, Ahmedabad, Pune and both darkstores, and on sales orders, invoices and transfer orders.
+3. **Zoho: give the panel its own read-only key.**
+   - The key in use is the CRMs' own refresh token. Zoho's answer shows its scopes: items and settings (read), stock adjustments (read and create). So purchase orders, sales orders, invoices and transfer orders answer "not authorized" because of the key, not the user's role.
+   - Sharing it also means Zoho can retire the panel's access token early when the CRMs make new ones (seen 16 Nov). The panel now replaces a refused token once per run, but its own key avoids the overlap.
+   - Make one in the Zoho API console → Self Client, with read scopes for items, settings, purchase orders, sales orders, invoices and transfer orders, by a Zoho user who can see every location. Today Mumbai, Ahmedabad, Pune and both darkstores refuse the current user.
+   - Retire the secret and refresh token shared in chat.
 
 4. **Vercel project** (`.env.example` lists every name):
    - Set `PANEL_DATABASE_URL`, `CRM_DATABASE_URL`, the six `ZOHO_*` values, `CRON_SECRET` (16+ characters), `PANEL_ACCESS_KEY` (12+ characters) and `NEXT_PUBLIC_DATA_SOURCE=live`.

@@ -160,7 +160,11 @@ export default function HealthPage() {
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-[12px] text-muted">Fix: in Zoho, give the integration user read access to every location, sales orders, invoices, transfer orders and purchase orders.</p>
+            <p className="mt-2 text-[12px] text-muted">
+              Fix: give the panel its own read-only Zoho key (Zoho API console → Self Client) with read scopes for items, settings, purchase orders, sales
+              orders, invoices and transfer orders, made by a Zoho user who can see every location. The key in use today is the CRMs’ own: it can read
+              items and settings and read and create stock adjustments, nothing else.
+            </p>
           </Card>
         </div>
       </div>

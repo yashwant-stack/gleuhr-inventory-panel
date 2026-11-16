@@ -82,7 +82,7 @@ export async function reserveCall(db: Db, now = new Date()): Promise<Reservation
 }
 
 /** A cached access token (one mint per hour at most, shared by every run through the database). */
-export async function accessToken(db: Db, cfg: ZohoConfig, fetchFn: typeof fetch = fetch, now = Date.now()): Promise<string> {
+export async function accessToken(db: Db, cfg: ZohoConfig, fetchFn: typeof fetch = fetch, now = Date.now(), onMint?: () => void): Promise<string> {
   const [row] = await db.query<{ access_token: string; expires_at: string | Date }>("select access_token, expires_at from zoho_token where id = 1");
   if (row && new Date(row.expires_at).getTime() - 60_000 > now) return row.access_token;
   const qs = new URLSearchParams({ refresh_token: cfg.refreshToken, client_id: cfg.clientId, client_secret: cfg.clientSecret, grant_type: "refresh_token" });
@@ -94,6 +94,7 @@ export async function accessToken(db: Db, cfg: ZohoConfig, fetchFn: typeof fetch
     "insert into zoho_token (id, access_token, expires_at) values (1, $1, $2) on conflict (id) do update set access_token = excluded.access_token, expires_at = excluded.expires_at",
     [body.access_token, expires],
   );
+  onMint?.();
   return body.access_token;
 }
 
@@ -120,29 +121,42 @@ export function zohoClient(db: Db, cfg: ZohoConfig, opts: ZohoClientOptions = {}
   const sleep = opts.sleep ?? realSleep;
   const timeUp = () => new ZohoBudgetExceeded("this run's time is up; the rest is read on the next run");
   let calls = 0;
+  // A saved access token can stop working before its hour is up: the panel shares its refresh token with the
+  // CRMs, and Zoho retires a token's oldest access tokens when new ones are made. Zoho then answers code 57
+  // ("not authorized") or 14 / HTTP 401. The client then makes a fresh token and asks again, once per run.
+  let mintedThisRun = false;
+  const once = async (path: string, query: Record<string, string | number>) => {
+    for (;;) {
+      const now = clock();
+      if (opts.deadline !== undefined && now.getTime() > opts.deadline) throw timeUp();
+      const r = await reserveCall(db, now);
+      if (r.ok) break;
+      if (opts.deadline !== undefined && now.getTime() + r.waitMs > opts.deadline) throw timeUp();
+      await sleep(r.waitMs);
+    }
+    calls++;
+    const token = await accessToken(db, cfg, fetchFn, clock().getTime(), () => (mintedThisRun = true));
+    const qs = new URLSearchParams({ organization_id: cfg.orgId, ...Object.fromEntries(Object.entries(query).map(([k, v]) => [k, String(v)])) });
+    const res = await fetchFn(`${cfg.apiBase}/inventory/v1/${path.replace(/^\//, "")}?${qs}`, {
+      headers: { Authorization: `Zoho-oauthtoken ${token}` },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (res.status === 429) {
+      const ra = Number(res.headers.get("retry-after"));
+      throw new ZohoRateLimited(Number.isFinite(ra) && ra > 0 ? ra : null);
+    }
+    const body = (await res.json().catch(() => ({}))) as { code?: number; message?: string } & Record<string, unknown>;
+    return { res, body };
+  };
   return {
     calls: () => calls,
     async get<T>(path: string, query: Record<string, string | number> = {}): Promise<ZohoResult<T>> {
-      for (;;) {
-        const now = clock();
-        if (opts.deadline !== undefined && now.getTime() > opts.deadline) throw timeUp();
-        const r = await reserveCall(db, now);
-        if (r.ok) break;
-        if (opts.deadline !== undefined && now.getTime() + r.waitMs > opts.deadline) throw timeUp();
-        await sleep(r.waitMs);
+      let { res, body } = await once(path, query);
+      const refused = res.status === 401 || body.code === 57 || body.code === 14;
+      if (refused && !mintedThisRun) {
+        await db.query("delete from zoho_token where id = 1");
+        ({ res, body } = await once(path, query));
       }
-      calls++;
-      const token = await accessToken(db, cfg, fetchFn, clock().getTime());
-      const qs = new URLSearchParams({ organization_id: cfg.orgId, ...Object.fromEntries(Object.entries(query).map(([k, v]) => [k, String(v)])) });
-      const res = await fetchFn(`${cfg.apiBase}/inventory/v1/${path.replace(/^\//, "")}?${qs}`, {
-        headers: { Authorization: `Zoho-oauthtoken ${token}` },
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-      if (res.status === 429) {
-        const ra = Number(res.headers.get("retry-after"));
-        throw new ZohoRateLimited(Number.isFinite(ra) && ra > 0 ? ra : null);
-      }
-      const body = (await res.json().catch(() => ({}))) as { code?: number; message?: string } & Record<string, unknown>;
       if (!res.ok || (typeof body.code === "number" && body.code !== 0)) {
         return { ok: false, status: res.status, code: typeof body.code === "number" ? body.code : null, message: String(body.message ?? `HTTP ${res.status}`) };
       }

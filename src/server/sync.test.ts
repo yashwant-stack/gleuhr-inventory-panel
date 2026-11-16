@@ -207,6 +207,8 @@ function fakeZoho(opts: { rateLimitAt?: number } = {}) {
     }
     const auth = new Headers(init?.headers).get("authorization");
     if (!auth?.startsWith("Zoho-oauthtoken tok-") || url.searchParams.get("organization_id") !== "ORG1") return json({ code: 14, message: "bad auth" }, 401);
+    // a token Zoho retired before its hour was up (other programs share the refresh token)
+    if (auth === "Zoho-oauthtoken tok-stale") return json({ code: 57, message: "You are not authorized to perform this operation" }, 401);
     const p = url.pathname.replace("/inventory/v1/", "");
     const loc = url.searchParams.get("location_id");
     calls.push(loc ? `${p}@${loc}` : p);
@@ -598,6 +600,20 @@ describe.each(DRIVERS)("the CRM through its REST API, on $name", (driver) => {
     await expect(runSync(["crm_flows"], { panel, now: NOW })).resolves.toHaveLength(1);
     const [lock] = await panel.query<{ n: number }>("select count(*)::int as n from sync_lock");
     expect(lock?.n).toBe(0);
+  });
+});
+
+describe.each(DRIVERS)("Zoho tokens, on $name", (driver) => {
+  it("replaces a saved token Zoho no longer accepts, and asks again once", async () => {
+    const panel = (await driver.fresh(MIGRATION)).db;
+    await panel.query("insert into zoho_token values (1, 'tok-stale', $1)", [new Date(NOW.getTime() + 3_600_000).toISOString()]);
+    const z = fakeZoho();
+    const c = handClock();
+    const [r] = await runSync(["zoho_catalog"], { panel, zohoCfg: CFG, fetchFn: z.fetchFn, now: NOW, clock: c.clock, sleep: c.sleep });
+    expect(r).toMatchObject({ ok: true, zohoCalls: 4 }); // the refused call + locations + 2 item pages
+    expect(z.mints()).toBe(1);
+    const [t] = await panel.query<{ access_token: string }>("select access_token from zoho_token");
+    expect(t?.access_token).toBe("tok-1");
   });
 });
 

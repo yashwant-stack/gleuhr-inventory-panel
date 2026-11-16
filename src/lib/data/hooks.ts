@@ -17,11 +17,12 @@ const LIVE = typeof process !== "undefined" && process.env.NEXT_PUBLIC_DATA_SOUR
 const DatasetContext = createContext<Dataset | null>(null);
 
 /** Loads the data once and shows loading / failure / the access key form honestly; children only render with real data in hand. */
-export function DatasetProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<{ ds?: Dataset; error?: string; locked?: boolean }>(() => (LIVE ? {} : { ds: getDataset() }));
+export function DatasetProvider({ children, initial }: { children: ReactNode; initial?: Dataset }) {
+  // `initial`: data already in hand (the public live-snapshot page, opened with the access key).
+  const [state, setState] = useState<{ ds?: Dataset; error?: string; locked?: boolean }>(() => (initial ? { ds: initial } : LIVE ? {} : { ds: getDataset() }));
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    if (!LIVE) return;
+    if (!LIVE || initial) return;
     let alive = true;
     fetch("/api/dataset", { cache: "no-store" })
       .then(async (r) => {
@@ -43,7 +44,7 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
     return () => {
       alive = false;
     };
-  }, [attempt]);
+  }, [attempt, initial]);
 
   if (state.ds) return createElement(DatasetContext.Provider, { value: state.ds }, children);
   return createElement(LoadScreen, {

@@ -20,7 +20,20 @@ const fragment = `${headInner}\n${body.trim()}\n`;
 const skeleton = (inner) =>
   `<!doctype html>\n<html lang="en-IN">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>\n</head>\n<body>\n${inner}</body>\n</html>\n`;
 
+const kb = (n) => `${Math.round(n / 1024)} KB`;
 fs.writeFileSync(path.join(dist, "gleuhr-inventory-panel.html"), fragment);
 fs.writeFileSync(path.join(dist, "gleuhr-inventory-panel-local.html"), skeleton(fragment));
-const kb = (n) => `${Math.round(n / 1024)} KB`;
 console.log(`preview page: ${kb(Buffer.byteLength(fragment))} (limit 16 MB)`);
+
+// The live-snapshot page (SNAPSHOT_FILE = the encrypted blob from encrypt-snapshot.mjs): the same page with the
+// live data inside, locked by the access key, under its own title.
+if (process.env.SNAPSHOT_FILE) {
+  const blob = JSON.parse(fs.readFileSync(process.env.SNAPSHOT_FILE, "utf8"));
+  if (blob.v !== 1 || !blob.data || !blob.salt || !blob.iv) throw new Error("SNAPSHOT_FILE is not an encrypted snapshot");
+  const live = fragment
+    .replace(/^<title>[^<]*<\/title>/, `<title>Gleuhr Inventory Live</title>\n<script>window.__GLEUHR_SNAPSHOT__=${JSON.stringify(blob)};</script>`);
+  if (!live.includes("__GLEUHR_SNAPSHOT__")) throw new Error("could not place the snapshot");
+  fs.writeFileSync(path.join(dist, "gleuhr-inventory-panel-live.html"), live);
+  fs.writeFileSync(path.join(dist, "gleuhr-inventory-panel-live-local.html"), skeleton(live));
+  console.log(`live snapshot page: ${kb(Buffer.byteLength(live))} (limit 16 MB)`);
+}

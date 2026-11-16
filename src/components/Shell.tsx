@@ -20,6 +20,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { IS_SNAPSHOT } from "@/lib/platform";
 import { useDataset, useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
 import { cycleState } from "@/lib/data/plans";
 import { CYCLES } from "@/lib/mock/plans";
@@ -156,7 +157,7 @@ function DataBadge() {
     <>
       <span className="inline-flex items-center gap-1.5 rounded-full bg-st-healthy-soft px-2.5 py-1 text-[12px] font-semibold text-st-healthy">
         <span className="h-1.5 w-1.5 rounded-full bg-st-healthy" aria-hidden />
-        Live
+        {IS_SNAPSHOT ? "Live data · snapshot" : "Live"}
       </span>
       <span className="hidden text-[12px] text-muted sm:inline">Synced {at}</span>
     </>
