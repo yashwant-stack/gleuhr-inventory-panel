@@ -107,7 +107,7 @@ export default function IndentPage() {
     <div>
       <PageHeader
         title="Auto indent"
-        sub="What to order now and how much. Order = daily rate × (lead time + cover days) + safety stock − current stock − stock on the way, rounded up to the pack size."
+        sub={`What to order now and how much. Order = daily rate × (lead time + cover days) − current stock − stock on the way, rounded up to the pack size, once the stock left falls to ${settings.reorderAtDays} days of sales.`}
         right={
           <>
             <Button icon={<Download size={14} />} onClick={exportList} disabled={IS_PREVIEW} disabledReason={PREVIEW_NO_DOWNLOAD}>
