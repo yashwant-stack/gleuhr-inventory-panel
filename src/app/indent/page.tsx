@@ -17,7 +17,61 @@ import { fmtInt, fmtMoney, fmtMoneyShort, fmtRate } from "@/lib/format";
 import { roleById } from "@/lib/roles";
 import { usePanel } from "@/lib/state/store";
 
-type LeadMode = "own" | (typeof LEAD_TIME_OPTIONS)[number];
+type LeadMode = "own" | number;
+/** A fixed choice (7/15/30/60/90 days), or "custom": any number of days typed in. */
+type DaysChoice = number | "custom";
+
+const MAX_DAYS = 365;
+const validDays = (v: string) => {
+  const n = Number(v);
+  return v.trim() !== "" && Number.isInteger(n) && n >= 1 && n <= MAX_DAYS ? n : null;
+};
+
+/** The fixed day buttons plus "Custom", which opens a box for any number of days (1–365). */
+function DaysPicker<T extends string>({
+  label,
+  options,
+  extra,
+  value,
+  onChange,
+  custom,
+  onCustom,
+}: {
+  label: string;
+  options: readonly number[];
+  /** Choices shown before the day buttons (e.g. "Each product’s own"). */
+  extra?: { value: T; label: string }[];
+  value: T | DaysChoice;
+  onChange: (v: T | DaysChoice) => void;
+  custom: string;
+  onCustom: (v: string) => void;
+}) {
+  const bad = value === "custom" && validDays(custom) === null;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Segmented<T | DaysChoice>
+        value={value}
+        onChange={onChange}
+        label={label}
+        options={[...(extra ?? []), ...options.map((d) => ({ value: d as T | DaysChoice, label: `${d} days` })), { value: "custom" as T | DaysChoice, label: "Custom" }]}
+      />
+      {value === "custom" ? (
+        <label className="inline-flex items-center gap-1.5 text-[12.5px] text-ink-2">
+          <input
+            inputMode="numeric"
+            autoFocus
+            aria-label={`${label}: custom number of days`}
+            value={custom}
+            onChange={(e) => onCustom(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))}
+            className={clsx("h-8 w-16 rounded-md border px-2 text-right tabular text-ink", bad ? "border-st-critical" : "border-line-strong")}
+          />
+          days
+          {bad ? <span className="text-st-critical">1 to {MAX_DAYS}</span> : null}
+        </label>
+      ) : null}
+    </div>
+  );
+}
 type Show = "now" | "all";
 type Tab = "order" | "vendor" | "lead" | "cover";
 
@@ -31,8 +85,17 @@ export default function IndentPage() {
   const approve = usePanel((s) => s.approve);
   const clearApproval = usePanel((s) => s.clearApproval);
   const openProduct = usePanel((s) => s.openProduct);
-  const [lead, setLead] = useState<LeadMode>("own");
-  const [cover, setCover] = useState<number>(settings.defaultCoverDays);
+  const [leadChoice, setLeadChoice] = useState<"own" | DaysChoice>("own");
+  const [leadCustom, setLeadCustom] = useState("45");
+  const [coverChoice, setCoverChoice] = useState<DaysChoice>((COVER_OPTIONS as readonly number[]).includes(settings.defaultCoverDays) ? settings.defaultCoverDays : "custom");
+  const [coverCustom, setCoverCustom] = useState(String(settings.defaultCoverDays));
+  // a custom box that is empty or out of range keeps the last good number, and says so beside the box
+  const [lastLead, setLastLead] = useState(45);
+  const [lastCover, setLastCover] = useState(settings.defaultCoverDays);
+  const customLead = validDays(leadCustom) ?? lastLead;
+  const customCover = validDays(coverCustom) ?? lastCover;
+  const lead: LeadMode = leadChoice === "custom" ? customLead : leadChoice;
+  const cover: number = coverChoice === "custom" ? customCover : coverChoice;
   const [show, setShow] = useState<Show>("now");
   const [tab, setTab] = useState<Tab>("order");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -134,16 +197,34 @@ export default function IndentPage() {
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
           <div>
             <div className="mb-1 text-[12px] font-semibold text-ink-2">New stock arrives in</div>
-            <Segmented<LeadMode>
-              value={lead}
-              onChange={setLead}
+            <DaysPicker<"own">
               label="Lead time"
-              options={[{ value: "own", label: "Each product’s own" }, ...LEAD_TIME_OPTIONS.map((d) => ({ value: d as LeadMode, label: `${d} days` }))]}
+              extra={[{ value: "own", label: "Each product’s own" }]}
+              options={LEAD_TIME_OPTIONS}
+              value={leadChoice}
+              onChange={setLeadChoice}
+              custom={leadCustom}
+              onCustom={(v) => {
+                setLeadCustom(v);
+                const n = validDays(v);
+                if (n !== null) setLastLead(n);
+              }}
             />
           </div>
           <div>
             <div className="mb-1 text-[12px] font-semibold text-ink-2">Order enough to last (after it arrives)</div>
-            <Segmented<number> value={cover} onChange={setCover} label="Cover" options={COVER_OPTIONS.map((d) => ({ value: d, label: `${d} days` }))} />
+            <DaysPicker<never>
+              label="Cover"
+              options={COVER_OPTIONS}
+              value={coverChoice}
+              onChange={(v) => setCoverChoice(v as DaysChoice)}
+              custom={coverCustom}
+              onCustom={(v) => {
+                setCoverCustom(v);
+                const n = validDays(v);
+                if (n !== null) setLastCover(n);
+              }}
+            />
           </div>
           <div>
             <div className="mb-1 text-[12px] font-semibold text-ink-2">Show</div>
@@ -308,18 +389,22 @@ export default function IndentPage() {
           </div>
         ) : null}
 
-        {tab === "lead" ? <LeadMatrix rows={matrixRows} cover={cover} reorderAtDays={settings.reorderAtDays} onOpen={openProduct} /> : null}
-        {tab === "cover" ? <CoverMatrix rows={matrixRows} reorderAtDays={settings.reorderAtDays} onOpen={openProduct} /> : null}
+        {tab === "lead" ? <LeadMatrix rows={matrixRows} cover={cover} extraLead={leadChoice === "custom" ? customLead : null} reorderAtDays={settings.reorderAtDays} onOpen={openProduct} /> : null}
+        {tab === "cover" ? <CoverMatrix rows={matrixRows} extraCover={coverChoice === "custom" ? customCover : null} reorderAtDays={settings.reorderAtDays} onOpen={openProduct} /> : null}
       </Card>
     </div>
   );
 }
 
-function LeadMatrix({ rows, cover, reorderAtDays, onOpen }: { rows: ProductMetrics[]; cover: number; reorderAtDays: number; onOpen: (id: string) => void }) {
+/** The fixed day columns, plus the custom number when one is chosen (in order, no repeats). */
+const withExtra = (fixed: readonly number[], extra: number | null) => (extra === null || fixed.includes(extra) ? [...fixed] : [...fixed, extra].sort((a, b) => a - b));
+
+function LeadMatrix({ rows, cover, extraLead, reorderAtDays, onOpen }: { rows: ProductMetrics[]; cover: number; extraLead: number | null; reorderAtDays: number; onOpen: (id: string) => void }) {
+  const leads = withExtra(LEAD_TIME_OPTIONS, extraLead);
   return (
     <div>
       <p className="px-4 py-3 text-[12.5px] text-ink-2">
-        How much to order now if new stock takes 7, 15, 30, 60 or 90 days to arrive, ordering enough for {cover} days after it lands. An order is due once the stock left falls to {reorderAtDays} days of sales (or to the lead time, when that is longer); “—” = not due yet. Red = days the shelf would be empty before it arrives.
+        How much to order now if new stock takes {leads.join(", ")} days to arrive, ordering enough for {cover} days after it lands. An order is due once the stock left falls to {reorderAtDays} days of sales (or to the lead time, when that is longer); “—” = not due yet. Red = days the shelf would be empty before it arrives.
       </p>
       <div className="max-h-[600px] overflow-auto scroll-thin">
         <table className="dtable">
@@ -328,7 +413,7 @@ function LeadMatrix({ rows, cover, reorderAtDays, onOpen }: { rows: ProductMetri
               <th>Product</th>
               <th className="num">Stock</th>
               <th className="num">Sells / day</th>
-              {LEAD_TIME_OPTIONS.map((L) => (
+              {leads.map((L) => (
                 <th key={L} className="num">
                   {L} days
                 </th>
@@ -341,7 +426,7 @@ function LeadMatrix({ rows, cover, reorderAtDays, onOpen }: { rows: ProductMetri
                 <td className="max-w-[230px] truncate font-medium">{m.product.name}</td>
                 <td className="num">{fmtInt(m.stock)}</td>
                 <td className="num">{fmtRate(m.rate)}</td>
-                {LEAD_TIME_OPTIONS.map((L) => {
+                {leads.map((L) => {
                   const q = indentQuantity({ rate: m.rate, leadTime: L, coverDays: cover, reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize }).qty;
                   const gap = daysWithNoStock(m.stock + m.onOrder, m.rate, L);
                   return (
@@ -360,7 +445,9 @@ function LeadMatrix({ rows, cover, reorderAtDays, onOpen }: { rows: ProductMetri
   );
 }
 
-function CoverMatrix({ rows, reorderAtDays, onOpen }: { rows: ProductMetrics[]; reorderAtDays: number; onOpen: (id: string) => void }) {
+function CoverMatrix({ rows, extraCover, reorderAtDays, onOpen }: { rows: ProductMetrics[]; extraCover: number | null; reorderAtDays: number; onOpen: (id: string) => void }) {
+  const covers = withExtra(COVER_OPTIONS, extraCover);
+  const i90 = covers.indexOf(90);
   return (
     <div>
       <p className="px-4 py-3 text-[12.5px] text-ink-2">Quantity needed for each cover period, side by side, using each product’s own lead time, so you can choose a short or a long order. “—” = not due yet: the stock left is above {reorderAtDays} days of sales.</p>
@@ -370,7 +457,7 @@ function CoverMatrix({ rows, reorderAtDays, onOpen }: { rows: ProductMetrics[]; 
             <tr>
               <th>Product</th>
               <th className="num">Lead time</th>
-              {COVER_OPTIONS.map((c) => (
+              {covers.map((c) => (
                 <th key={c} className="num">
                   {c} days
                 </th>
@@ -380,7 +467,7 @@ function CoverMatrix({ rows, reorderAtDays, onOpen }: { rows: ProductMetrics[]; 
           </thead>
           <tbody>
             {rows.map((m) => {
-              const qs = COVER_OPTIONS.map((c) => indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: c, reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize }).qty);
+              const qs = covers.map((c) => indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: c, reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize }).qty);
               return (
                 <tr key={m.product.id} className="clickable" onClick={() => onOpen(m.product.id)}>
                   <td className="max-w-[230px] truncate font-medium">{m.product.name}</td>
@@ -390,7 +477,7 @@ function CoverMatrix({ rows, reorderAtDays, onOpen }: { rows: ProductMetrics[]; 
                       {q ? fmtInt(q) : "—"}
                     </td>
                   ))}
-                  <td className="num">{fmtMoneyShort((qs[qs.length - 1] ?? 0) * m.product.cost)}</td>
+                  <td className="num">{fmtMoneyShort((qs[i90] ?? 0) * m.product.cost)}</td>
                 </tr>
               );
             })}
