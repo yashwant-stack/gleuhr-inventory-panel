@@ -1,16 +1,16 @@
 "use client";
 
 import clsx from "clsx";
-import { ArrowLeft, Paperclip } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, Paperclip, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Fragment, Suspense, useMemo, useState } from "react";
 import { SubmissionChip } from "@/components/plan-ui";
 import { toast } from "@/components/Toast";
 import { Button, Card, CardHeader, Delta, Note, PageHeader, StatusChip } from "@/components/ui";
-import { urgency } from "@/lib/data/engine";
+import { urgency, type ProductMetrics } from "@/lib/data/engine";
 import { useDataset, useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
-import { cycleById, cycleState, periodDays, planBaseline, submissionStatus, type PlanLine } from "@/lib/data/plans";
+import { cycleById, cycleState, periodDays, planBaseline, spreadPlan, submissionStatus, type PlanLine, type TrendRow } from "@/lib/data/plans";
 import { fmtDay, fmtRange } from "@/lib/dates";
 import { gapPct, isGapFlagged } from "@/lib/domain/formulas";
 import { fmtDays, fmtInt, fmtMoneyShort, fmtPct, fmtRate } from "@/lib/format";
@@ -19,10 +19,20 @@ import { usePanel } from "@/lib/state/store";
 
 interface Draft {
   planned: Record<string, string>;
+  /** Product by product, per line (the marketing plan): line key → product id → units typed. */
+  products: Record<string, Record<string, string>>;
   activity: Record<string, string>;
   budget: Record<string, string>;
   note: string;
 }
+
+/** The marketing plan is planned product by product inside each channel; the channel total is their sum. */
+const PRODUCT_WISE: PlanPart[] = ["marketing"];
+
+const toNum = (v: string | undefined) => {
+  const n = Number(v);
+  return v !== undefined && v !== "" && Number.isFinite(n) && n >= 0 ? Math.round(n) : NaN;
+};
 
 function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
   const router = useRouter();
@@ -38,9 +48,21 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
 
   const baseline = useMemo(() => (cycle && meta ? planBaseline(ds, settings, part, cycle) : []), [ds, settings, part, cycle, meta]);
   const existing = cycle ? all[`${cycle.id}:${part}`] : undefined;
+  const productWise = PRODUCT_WISE.includes(part);
+  const [open, setOpen] = useState<Set<string>>(new Set());
 
   const [draft, setDraft] = useState<Draft>(() => ({
     planned: Object.fromEntries(baseline.map((b) => [b.key, String(existing?.lines.find((l) => l.key === b.key)?.plannedUnits ?? b.systemUnits)])),
+    products: productWise
+      ? Object.fromEntries(
+          baseline.map((b) => {
+            const line = existing?.lines.find((l) => l.key === b.key);
+            // a saved product-wise plan as saved; a plan saved as one number per channel spread over its products
+            const saved = line?.products ? Object.fromEntries(line.products.map((x) => [x.productId, x.plannedUnits])) : line ? spreadPlan(b.products, line.plannedUnits) : null;
+            return [b.key, Object.fromEntries(b.products.map((x) => [x.productId, String(saved ? (saved[x.productId] ?? 0) : x.systemUnits)]))];
+          }),
+        )
+      : {},
     activity: Object.fromEntries(baseline.map((b) => [b.key, existing?.lines.find((l) => l.key === b.key)?.activity ?? ""])),
     budget: Object.fromEntries(baseline.map((b) => [b.key, String(existing?.lines.find((l) => l.key === b.key)?.budget || "")])),
     note: existing?.note ?? "",
@@ -76,11 +98,32 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
   const overstock = metrics.filter((m) => m.status === "overstock").sort((a, b) => b.excess * b.product.cost - a.excess * a.product.cost).slice(0, 6);
   const short = metrics.filter((m) => m.status === "critical" || m.status === "low").sort((a, b) => urgency(a) - urgency(b)).slice(0, 6);
 
+  const productNum = (k: string, id: string) => toNum(draft.products[k]?.[id]);
   const num = (k: string) => {
-    const n = Number(draft.planned[k]);
-    return Number.isFinite(n) && n >= 0 ? Math.round(n) : NaN;
+    if (productWise) {
+      const b = baseline.find((x) => x.key === k);
+      if (!b) return NaN;
+      let sum = 0;
+      for (const x of b.products) {
+        const n = productNum(k, x.productId);
+        if (Number.isNaN(n)) return NaN;
+        sum += n;
+      }
+      return sum;
+    }
+    return toNum(draft.planned[k]);
   };
   const invalid = baseline.some((b) => Number.isNaN(num(b.key)));
+  const byId = new Map(metrics.map((m) => [m.product.id, m]));
+  const toggle = (k: string) =>
+    setOpen((o) => {
+      const n = new Set(o);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+  const setProduct = (k: string, id: string, v: string) => setDraft((d) => ({ ...d, products: { ...d.products, [k]: { ...d.products[k], [id]: v.replace(/[^0-9]/g, "") } } }));
+  const resetLine = (b: TrendRow) => setDraft((d) => ({ ...d, products: { ...d.products, [b.key]: Object.fromEntries(b.products.map((x) => [x.productId, String(x.systemUnits)])) } }));
   const totalSystem = baseline.reduce((a, b) => a + b.systemUnits, 0);
   const totalPlanned = baseline.reduce((a, b) => a + (Number.isNaN(num(b.key)) ? 0 : num(b.key)), 0);
 
@@ -93,6 +136,14 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
       plannedUnits: num(b.key),
       activity: draft.activity[b.key] ?? "",
       budget: Number(draft.budget[b.key]) || 0,
+      // only products with a projection or a plan are kept; the rest are 0
+      ...(productWise
+        ? {
+            products: b.products
+              .map((x) => ({ productId: x.productId, systemUnits: x.systemUnits, plannedUnits: productNum(b.key, x.productId) }))
+              .filter((x) => x.systemUnits > 0 || x.plannedUnits > 0),
+          }
+        : {}),
     }));
     // Sample data lives on its own calendar day; live data uses the real clock.
     const now = new Date().toISOString();
@@ -182,7 +233,7 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
       <Card className="mt-3">
         <CardHeader
           title="B · Projected trend and plan"
-          sub={`Starts from the system projection. Change a number only where you know something the data can’t show. Changes over ±${settings.gapFlagPct}% are flagged in the CBO’s report.`}
+          sub={`Starts from the system projection. Change a number only where you know something the data can’t show. Changes over ±${settings.gapFlagPct}% are flagged in the CBO’s report.${productWise ? " Click a channel to plan it product by product: its expected units are the sum of its products." : ""}`}
         />
         <div className="overflow-x-auto scroll-thin">
           <table className="dtable">
@@ -207,11 +258,39 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
                 const n = num(b.key);
                 const g = Number.isNaN(n) ? null : gapPct(n, b.systemUnits);
                 const flagged = !Number.isNaN(n) && isGapFlagged(n, b.systemUnits, settings.gapFlagPct);
+                const isOpen = open.has(b.key);
                 return (
-                  <tr key={b.key}>
-                    <td className="font-medium whitespace-nowrap">{b.label}</td>
+                  <Fragment key={b.key}>
+                  <tr>
+                    <td className="font-medium whitespace-nowrap">
+                      {productWise ? (
+                        <button
+                          type="button"
+                          onClick={() => toggle(b.key)}
+                          aria-expanded={isOpen}
+                          aria-controls={`products-${b.key}`}
+                          className="inline-flex items-center gap-1 text-left hover:text-coral-dark"
+                        >
+                          {isOpen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+                          {b.label}
+                          <span className="ml-1 text-[11.5px] font-normal text-muted">{isOpen ? "hide products" : "by product"}</span>
+                        </button>
+                      ) : (
+                        b.label
+                      )}
+                    </td>
                     <td className="num text-ink-2">{fmtInt(b.systemUnits)}</td>
                     <td className="num">
+                      {productWise ? (
+                        <button
+                          type="button"
+                          onClick={() => toggle(b.key)}
+                          title="The sum of this channel's products. Click to edit them."
+                          className={clsx("h-8 w-full rounded-md border border-dashed px-2 text-right font-semibold tabular", Number.isNaN(n) ? "border-st-critical" : "border-line-strong")}
+                        >
+                          {Number.isNaN(n) ? "—" : fmtInt(n)}
+                        </button>
+                      ) : (
                       <input
                         inputMode="numeric"
                         aria-label={`Expected units for ${b.label}`}
@@ -224,6 +303,7 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
                           !canSubmit && "bg-sunken text-ink-2",
                         )}
                       />
+                      )}
                     </td>
                     <td className={clsx("num whitespace-nowrap", flagged && "font-semibold text-st-low")}>{g === null ? "—" : `${fmtPct(g, true)}${flagged ? " ⚑" : ""}`}</td>
                     <td>
@@ -249,6 +329,23 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
                       </td>
                     ) : null}
                   </tr>
+                  {productWise && isOpen ? (
+                    <tr id={`products-${b.key}`}>
+                      <td colSpan={showBudget ? 6 : 5} className="bg-bone px-3 py-3">
+                        <ProductPlan
+                          line={b}
+                          days={days}
+                          values={draft.products[b.key] ?? {}}
+                          byId={byId}
+                          canEdit={canSubmit}
+                          gapFlagPct={settings.gapFlagPct}
+                          onChange={(id, v) => setProduct(b.key, id, v)}
+                          onReset={() => resetLine(b)}
+                        />
+                      </td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -280,7 +377,7 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
             Attach plan file (optional)
           </Button>
           <div className="ml-auto flex items-center gap-2">
-            {invalid ? <span className="text-[12.5px] text-st-critical">Fill every expected-units box with a number</span> : null}
+            {invalid ? <span className="text-[12.5px] text-st-critical">Fill every expected-units box with a number{productWise ? " (open each channel to check its products)" : ""}</span> : null}
             <Button variant="primary" onClick={submit} disabled={!canSubmit || invalid} disabledReason={reason || "Fix the highlighted boxes first"}>
               {existing ? `Submit as version ${(existing.version ?? 1) + 1}` : "Submit plan"}
             </Button>
@@ -288,6 +385,112 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
         </div>
         {existing && canSubmit ? <p className="mt-2 text-right text-[11.5px] text-muted">A new submission is saved as a new version; the earlier one is kept.</p> : null}
       </Card>
+    </div>
+  );
+}
+
+/** One channel's products: stock now, last 30 days, the system's expectation and the planner's own number. */
+function ProductPlan({
+  line,
+  days,
+  values,
+  byId,
+  canEdit,
+  gapFlagPct,
+  onChange,
+  onReset,
+}: {
+  line: TrendRow;
+  days: number;
+  values: Record<string, string>;
+  byId: Map<string, ProductMetrics>;
+  canEdit: boolean;
+  gapFlagPct: number;
+  onChange: (productId: string, value: string) => void;
+  onReset: () => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const rows = line.products
+    .map((x) => ({ ...x, m: byId.get(x.productId), n: toNum(values[x.productId]) }))
+    .filter((r) => r.m)
+    .sort((a, b) => b.systemUnits - a.systemUnits || b.last30 - a.last30 || a.m!.product.name.localeCompare(b.m!.product.name));
+  const active = (r: (typeof rows)[number]) => r.systemUnits > 0 || r.last30 > 0 || (r.n > 0 && !Number.isNaN(r.n));
+  const shown = showAll ? rows : rows.filter(active);
+  const hidden = rows.length - shown.length;
+  const total = rows.reduce((a, r) => a + (Number.isNaN(r.n) ? 0 : r.n), 0);
+  const changed = rows.some((r) => r.n !== r.systemUnits);
+  return (
+    <div>
+      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
+        <span className="font-semibold text-ink">{line.label}: product by product</span>
+        <span className="text-ink-2">
+          {rows.filter(active).length} products sold here · system {fmtInt(line.systemUnits)} · expected {fmtInt(total)} in {days} days
+        </span>
+        {canEdit && changed ? (
+          <button type="button" onClick={onReset} className="ml-auto inline-flex items-center gap-1 text-ink-2 hover:text-ink">
+            <RotateCcw size={12} aria-hidden /> Reset to system
+          </button>
+        ) : null}
+      </div>
+      <div className="max-h-[440px] overflow-auto rounded-lg border border-line bg-surface scroll-thin">
+        <table className="dtable">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th className="num">Stock now</th>
+              <th className="num">Last 30 days (units)</th>
+              <th className="num">System</th>
+              <th className="num" style={{ width: 120 }}>
+                Expected units
+              </th>
+              <th className="num">Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((r) => {
+              const m = r.m!;
+              const g = Number.isNaN(r.n) || r.systemUnits <= 0 ? null : gapPct(r.n, r.systemUnits);
+              const flagged = !Number.isNaN(r.n) && r.systemUnits > 0 && isGapFlagged(r.n, r.systemUnits, gapFlagPct);
+              return (
+                <tr key={r.productId}>
+                  <td>
+                    <div className="max-w-[260px] truncate font-medium">{m.product.name}</div>
+                    <div className="text-[11px] text-muted">{m.product.sku}</div>
+                  </td>
+                  <td className="num whitespace-nowrap">
+                    <span className="tabular">{fmtInt(m.stock)}</span>{" "}
+                    {m.status === "critical" || m.status === "low" || m.status === "overstock" ? <StatusChip status={m.status} size="sm" /> : null}
+                  </td>
+                  <td className="num text-ink-2">{fmtInt(r.last30)}</td>
+                  <td className="num text-ink-2">{fmtInt(r.systemUnits)}</td>
+                  <td className="num">
+                    <input
+                      inputMode="numeric"
+                      aria-label={`Expected units for ${m.product.name} (${line.label})`}
+                      value={values[r.productId] ?? ""}
+                      disabled={!canEdit}
+                      onChange={(e) => onChange(r.productId, e.target.value)}
+                      className={clsx(
+                        "h-8 w-full rounded-md border px-2 text-right tabular",
+                        Number.isNaN(r.n) ? "border-st-critical" : "border-line-strong",
+                        !canEdit && "bg-sunken text-ink-2",
+                      )}
+                    />
+                  </td>
+                  <td className={clsx("num whitespace-nowrap", flagged && "font-semibold text-st-low")}>
+                    {r.systemUnits <= 0 ? (!Number.isNaN(r.n) && r.n > 0 ? "new" : "—") : g === null ? "—" : `${fmtPct(g, true)}${flagged ? " ⚑" : ""}`}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {hidden > 0 || showAll ? (
+        <button type="button" onClick={() => setShowAll((v) => !v)} className="mt-2 text-[12px] text-ink-2 hover:text-ink hover:underline">
+          {showAll ? "Hide products with no sales here" : `Show ${hidden} more product${hidden === 1 ? "" : "s"} with no sales here in the last 60 days`}
+        </button>
+      ) : null}
     </div>
   );
 }

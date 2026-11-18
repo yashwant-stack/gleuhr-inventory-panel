@@ -483,6 +483,7 @@ S += bullets([
     "<b>Projection</b> for 7 / 15 / 30 / 60 / 90 days = sells per day × days (an optional trend factor, off by default, can scale it within ±25%).",
     "<b>Channels</b>: each channel's sales, growth and next-30-day forecast. A growth % shows only when the sales points behind it were recording through the whole previous period; otherwise “earlier data incomplete”.",
     "<b>Plans</b>: four planners submit their part each week (marketing, sales, D2C, clinic). A plan more than ±20% away from the system's projection is flagged; Reports lays plans against the projection.",
+    "<b>Marketing plan, product by product</b>: inside each channel (clinics, online team, website) the Marketing Head sees every product with its stock now, last 30 days and the system's expected units, and types their own expected units. The channel total is the sum of its products, and each product's own plan feeds the stock-shortfall check.",
 ])
 S.append(PageBreak())
 

@@ -57,6 +57,7 @@ const G: Record<string, string> = {
   trend: "Whether sales are speeding up or slowing down: last 7 days vs last 30 days.",
   stock: "Stock now, from Zoho: the warehouse plus every clinic location the Zoho login may read.",
   "stock today": "Stock now, from Zoho, across the readable locations.",
+  "stock now": "Stock now, from Zoho: the Mohali warehouse plus every clinic location the Zoho login may read.",
   "zoho stock": "Stock as Zoho reports it at this location.",
   warehouse: "Stock at the primary Zoho location (Mohali warehouse), which ships online orders and refills clinics.",
   clinics_stock: "Stock across the clinic locations.",
