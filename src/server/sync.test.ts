@@ -523,8 +523,12 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     const panel = await panelDb();
     const results = await runSync(FREQUENT_JOBS, { panel, now: NOW });
     expect(results.every((r) => r.skipped && !r.ok)).toBe(true);
-    expect(byJob(results, "zoho_stock").note).toBe("Zoho is not configured");
+    expect(byJob(results, "zoho_stock").note).toMatch(/^Zoho is not configured/);
     expect(byJob(results, "crm_flows").note).toBe("The CRM connection is not configured");
+    // logged, so Data health shows the skip instead of an old "ok"
+    const logged = await panel.query<{ job: string; ok: boolean; note: string }>("select job, ok, note from sync_runs order by id");
+    expect(logged.map((r) => r.job).sort()).toEqual([...FREQUENT_JOBS].sort());
+    expect(logged.every((r) => r.ok === false)).toBe(true);
     await expect(buildDataset(panel, NOW)).rejects.toBeInstanceOf(NotReady);
   });
 });

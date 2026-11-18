@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { gatewayDb, NotConfigured, panelDb } from "./db";
+import { zohoMissing, zohoNotConfiguredNote } from "./zoho";
 
 describe("the gateway connection", () => {
   it("sends the mode, statement, parameters and key; returns the rows", async () => {
@@ -51,5 +52,16 @@ describe("choosing the panel database", () => {
     vi.stubEnv("PANEL_SQL_URL", "https://crm.test/fn");
     vi.stubEnv("PANEL_SQL_KEY", "k".repeat(64));
     expect(() => panelDb()).not.toThrow();
+  });
+});
+
+describe("Zoho settings", () => {
+  const all = { ZOHO_ORG_ID: "1", ZOHO_CLIENT_ID: "c", ZOHO_CLIENT_SECRET: "s", ZOHO_REFRESH_TOKEN: "r" };
+  it("names the empty or missing ones (never their values)", () => {
+    expect(zohoMissing(all)).toEqual([]);
+    expect(zohoMissing({ ...all, ZOHO_REFRESH_TOKEN: "  " })).toEqual(["ZOHO_REFRESH_TOKEN"]);
+    expect(zohoNotConfiguredNote({ ...all, ZOHO_CLIENT_SECRET: "", ZOHO_REFRESH_TOKEN: undefined })).toBe(
+      "Zoho is not configured: ZOHO_CLIENT_SECRET, ZOHO_REFRESH_TOKEN are empty or missing on this server",
+    );
   });
 });

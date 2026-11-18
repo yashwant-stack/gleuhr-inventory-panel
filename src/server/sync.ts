@@ -12,6 +12,7 @@ import {
   zohoClient,
   ZohoBudgetExceeded,
   ZohoRateLimited,
+  zohoNotConfiguredNote,
   type ZohoClient,
   type ZohoConfig,
   type ZohoItemRow,
@@ -351,7 +352,10 @@ async function runJobs(jobs: JobName[], deps: SyncDeps): Promise<JobResult[]> {
   for (const job of jobs) {
     const need = NEEDS[job];
     if ((need.zoho && !zoho) || (need.crm && !deps.crm)) {
-      results.push({ job, ok: false, skipped: true, rows: 0, zohoCalls: 0, note: need.zoho ? "Zoho is not configured" : "The CRM connection is not configured" });
+      const note = need.zoho && !zoho ? zohoNotConfiguredNote() : "The CRM connection is not configured";
+      results.push({ job, ok: false, skipped: true, rows: 0, zohoCalls: 0, note });
+      // Logged, so Data health shows it: a skip that leaves no trace looks like a sync that is merely late.
+      await deps.panel.query("insert into sync_runs (job, finished_at, ok, note) values ($1, now(), false, $2)", [job, note]);
       continue;
     }
     if (need.zoho && stopZoho) {

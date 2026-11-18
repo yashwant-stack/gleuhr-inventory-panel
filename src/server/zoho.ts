@@ -25,16 +25,30 @@ export interface ZohoConfig {
   refreshToken: string;
 }
 
+export const ZOHO_REQUIRED = ["ZOHO_ORG_ID", "ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN"] as const;
+
+/** The required Zoho settings that are empty or missing on this server: names only, never values. */
+export function zohoMissing(env: Record<string, string | undefined> = process.env): string[] {
+  return ZOHO_REQUIRED.filter((k) => !env[k]?.trim());
+}
+
+/** "Zoho is not configured", naming what is missing (found on 18 Nov 2026: a Vercel project skipped Zoho on every run). */
+export function zohoNotConfiguredNote(env: Record<string, string | undefined> = process.env): string {
+  const missing = zohoMissing(env);
+  if (!missing.length) return "Zoho is not configured";
+  return `Zoho is not configured: ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} empty or missing on this server`;
+}
+
 export function zohoConfig(): ZohoConfig | null {
   const e = process.env;
-  if (!e.ZOHO_ORG_ID || !e.ZOHO_CLIENT_ID || !e.ZOHO_CLIENT_SECRET || !e.ZOHO_REFRESH_TOKEN) return null;
+  if (zohoMissing(e).length) return null;
   return {
     apiBase: (e.ZOHO_API_BASE ?? "https://www.zohoapis.in").replace(/\/+$/, "").replace(/\/inventory\/v1$/, ""),
     accountsBase: (e.ZOHO_ACCOUNTS_BASE ?? "https://accounts.zoho.in").replace(/\/+$/, ""),
-    orgId: e.ZOHO_ORG_ID,
-    clientId: e.ZOHO_CLIENT_ID,
-    clientSecret: e.ZOHO_CLIENT_SECRET,
-    refreshToken: e.ZOHO_REFRESH_TOKEN,
+    orgId: e.ZOHO_ORG_ID!.trim(),
+    clientId: e.ZOHO_CLIENT_ID!.trim(),
+    clientSecret: e.ZOHO_CLIENT_SECRET!.trim(),
+    refreshToken: e.ZOHO_REFRESH_TOKEN!.trim(),
   };
 }
 
