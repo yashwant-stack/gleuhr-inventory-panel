@@ -14,6 +14,27 @@ export interface PlanProductLine {
   productId: string;
   systemUnits: number;
   plannedUnits: number;
+  /** Ad budget on this product in this channel (₹). */
+  budget?: number;
+}
+
+/** One clinic inside the sales plan's Clinics line (the former clinic plan, merged 19 Nov 2026). */
+export interface PlanClinicLine {
+  key: string;
+  label: string;
+  systemUnits: number;
+  plannedUnits: number;
+}
+
+/** What the planner confirmed before a plan was locked. */
+export interface PlanConsent {
+  at: string;
+  by: RoleId;
+  /** Products shown as at risk of running out, and overstock not pushed, when they confirmed. */
+  atRisk: string[];
+  overstock: string[];
+  /** "This plan was discussed with and approved by the MD." */
+  mdApproved: true;
 }
 
 export interface PlanLine {
@@ -23,8 +44,11 @@ export interface PlanLine {
   /** When `products` is present, this is their sum. */
   plannedUnits: number;
   activity: string;
+  /** When `products` carry budgets, this is their sum. */
   budget: number;
   products?: PlanProductLine[];
+  /** The sales plan's Clinics line, clinic by clinic; `plannedUnits` is their sum. */
+  clinics?: PlanClinicLine[];
 }
 
 export interface PlanSubmission {
@@ -35,6 +59,10 @@ export interface PlanSubmission {
   lines: PlanLine[];
   note: string;
   version: number;
+  /** Locked plans cannot be edited; Management can reopen them. */
+  locked?: boolean;
+  consent?: PlanConsent;
+  reopened?: { at: string; by: RoleId };
 }
 
 /** One product's share of a plan line: its own last 30 days and system projection. */
@@ -73,13 +101,14 @@ export function cycleState(c: PlanCycle, today: string): CycleState {
   return "closed";
 }
 
-/** The lines each part plans: connected channels, connected D2C channels, or active clinics. */
-export function partKeys(ds: Dataset, part: PlanPart): { key: string; label: string }[] {
-  const connected = connectedChannels(ds);
+/** A set of plan lines: the channels (both plans), or the active clinics (inside the sales plan's Clinics line). */
+export type LineSet = PlanPart | "clinic";
+
+/** The lines a set plans: connected channels, or active clinics. */
+export function partKeys(ds: Dataset, part: LineSet): { key: string; label: string }[] {
   const label = (c: ChannelId) => ds.channels.find((x) => x.id === c)!.label;
-  if (part === "d2c") return connected.filter((c) => c !== "clinic").map((c) => ({ key: c, label: label(c) }));
   if (part === "clinic") return ds.clinics.filter((c) => c.active).map((c) => ({ key: `clinic:${c.id}`, label: c.name }));
-  return connected.map((c) => ({ key: c, label: label(c) }));
+  return connectedChannels(ds).map((c) => ({ key: c, label: label(c) }));
 }
 
 /** Which sources a plan line covers: a channel, or one clinic's own clinic sales. */
@@ -99,7 +128,7 @@ function keyChannel(key: string): ChannelId {
  * Current trend (auto-filled from data) and the system projection for a plan period, per line.
  * `asOf` = the day the projection is made (defaults to today; past cycles use their request day).
  */
-export function planBaseline(ds: Dataset, settings: FormulaSettings, part: PlanPart, cycle: PlanCycle, asOf?: string): TrendRow[] {
+export function planBaseline(ds: Dataset, settings: FormulaSettings, part: LineSet, cycle: PlanCycle, asOf?: string): TrendRow[] {
   const days = periodDays(cycle);
   const cut = Math.min(ds.days.length, Math.max(1, diffDays(asOf ?? ds.today, ds.days[0]!) + 1));
   const lag = ds.days.length - cut;
@@ -192,11 +221,23 @@ export function spreadPlan(products: { productId: string; systemUnits: number }[
   return out;
 }
 
+/**
+ * The sales plan's Clinics line, clinic by clinic: each clinic's own system projection, adjusted in whole units so
+ * the clinics add up exactly to the Clinics channel's figure (each is rounded on its own).
+ */
+export function clinicSplit(ds: Dataset, settings: FormulaSettings, cycle: PlanCycle, channelSystem: number, asOf?: string): (PlanClinicLine & { last30: number })[] {
+  const rows = planBaseline(ds, settings, "clinic", cycle, asOf);
+  const fit = spreadPlan(rows.map((r) => ({ productId: r.key, systemUnits: r.systemUnits })), channelSystem);
+  return rows.map((r) => ({ key: r.key, label: r.label, last30: r.last30, systemUnits: fit[r.key] ?? 0, plannedUnits: fit[r.key] ?? 0 }));
+}
+
 /** Seed submissions become real submissions using the baseline at the cycle's request day. */
 export function seedSubmissions(ds: Dataset, settings: FormulaSettings): PlanSubmission[] {
   return SEED_SUBMISSIONS.map((s) => {
     const cycle = cycleById(s.cycleId)!;
-    const base = planBaseline(ds, settings, s.part, cycle, cycle.requestOn < ds.today ? cycle.requestOn : ds.today);
+    const asOf = cycle.requestOn < ds.today ? cycle.requestOn : ds.today;
+    const base = planBaseline(ds, settings, s.part, cycle, asOf);
+    const mult = (key: string) => s.multipliers[key] ?? s.multipliers.default;
     return {
       cycleId: s.cycleId,
       part: s.part,
@@ -204,14 +245,20 @@ export function seedSubmissions(ds: Dataset, settings: FormulaSettings): PlanSub
       submittedAt: s.submittedAt,
       note: s.note,
       version: 1,
-      lines: base.map((b) => ({
-        key: b.key,
-        label: b.label,
-        systemUnits: b.systemUnits,
-        plannedUnits: Math.round(b.systemUnits * (s.multipliers[b.key] ?? s.multipliers.default)),
-        activity: s.activities[b.key] ?? "",
-        budget: s.budgets[b.key] ?? 0,
-      })),
+      lines: base.map((b) => {
+        if (s.part === "sales" && b.key === "clinic") {
+          const clinics = clinicSplit(ds, settings, cycle, b.systemUnits, asOf).map((c) => ({ key: c.key, label: c.label, systemUnits: c.systemUnits, plannedUnits: Math.round(c.systemUnits * (s.multipliers[c.key] ?? mult("clinic"))) }));
+          return { key: b.key, label: b.label, systemUnits: b.systemUnits, plannedUnits: clinics.reduce((a, c) => a + c.plannedUnits, 0), activity: s.activities[b.key] ?? "", budget: s.budgets[b.key] ?? 0, clinics };
+        }
+        return {
+          key: b.key,
+          label: b.label,
+          systemUnits: b.systemUnits,
+          plannedUnits: Math.round(b.systemUnits * mult(b.key)),
+          activity: s.activities[b.key] ?? "",
+          budget: s.budgets[b.key] ?? 0,
+        };
+      }),
     };
   });
 }
@@ -258,8 +305,7 @@ export interface ConsolidatedRow {
   systemValue: number;
   salesPlan: number | null;
   marketing: number | null;
-  team: number | null;
-  /** The plan the readiness check uses: sales plan, else team, else marketing, else system. */
+  /** The plan the readiness check uses: the sales plan, else the marketing plan, else the system. */
   plan: number;
   gap: number | null;
   flagged: boolean;
@@ -274,7 +320,8 @@ export interface ReadinessRow {
 
 export interface Consolidated {
   rows: ConsolidatedRow[];
-  clinics: { key: string; label: string; system: number; team: number | null; gap: number | null; flagged: boolean }[];
+  /** The sales plan's Clinics line, clinic by clinic. */
+  clinics: { key: string; label: string; system: number; plan: number | null; gap: number | null; flagged: boolean }[];
   readiness: ReadinessRow[];
   totals: { system: number; plan: number; systemValue: number };
 }
@@ -289,7 +336,6 @@ export function consolidate(
   const asOf = cycle.requestOn < ds.today ? cycle.requestOn : ds.today;
   const base = planBaseline(ds, settings, "marketing", cycle, asOf);
   const pick = (part: PlanPart, key: string) => submissions[part]?.lines.find((l) => l.key === key)?.plannedUnits ?? null;
-  const clinicTeam = submissions.clinic ? submissions.clinic.lines.reduce((a, l) => a + l.plannedUnits, 0) : null;
 
   // per channel: the plan line the readiness check uses, when it was planned product by product
   const productPlans: Record<string, { byProduct: Map<string, PlanProductLine> }> = {};
@@ -297,12 +343,11 @@ export function consolidate(
     const channel = b.key as ChannelId;
     const salesPlan = pick("sales", channel);
     const marketing = pick("marketing", channel);
-    const team = channel === "clinic" ? clinicTeam : pick("d2c", channel);
-    const plan = salesPlan ?? team ?? marketing ?? b.systemUnits;
-    const usedPart: PlanPart | null = salesPlan !== null ? "sales" : team !== null ? (channel === "clinic" ? null : "d2c") : marketing !== null ? "marketing" : null;
+    const plan = salesPlan ?? marketing ?? b.systemUnits;
+    const usedPart: PlanPart | null = salesPlan !== null ? "sales" : marketing !== null ? "marketing" : null;
     const usedLine = usedPart ? submissions[usedPart]?.lines.find((l) => l.key === channel) : undefined;
     if (usedLine?.products?.length) productPlans[channel] = { byProduct: new Map(usedLine.products.map((x) => [x.productId, x])) };
-    const compare = salesPlan ?? team ?? marketing;
+    const compare = salesPlan ?? marketing;
     return {
       channel,
       label: b.label,
@@ -310,17 +355,18 @@ export function consolidate(
       systemValue: b.systemValue,
       salesPlan,
       marketing,
-      team,
       plan,
       gap: compare === null ? null : gapPct(compare, b.systemUnits),
       flagged: compare !== null && isGapFlagged(compare, b.systemUnits, settings.gapFlagPct),
     };
   });
 
-  const clinicBase = planBaseline(ds, settings, "clinic", cycle, asOf);
-  const clinics = clinicBase.map((c) => {
-    const team = pick("clinic", c.key);
-    return { key: c.key, label: c.label, system: c.systemUnits, team, gap: team === null ? null : gapPct(team, c.systemUnits), flagged: team !== null && isGapFlagged(team, c.systemUnits, settings.gapFlagPct) };
+  const clinicRow = rows.find((r) => r.channel === "clinic");
+  const salesClinics = submissions.sales?.lines.find((l) => l.key === "clinic")?.clinics;
+  const clinics = clinicSplit(ds, settings, cycle, clinicRow?.system ?? 0, asOf).map((c) => {
+    const saved = salesClinics?.find((x) => x.key === c.key);
+    const plan = saved ? saved.plannedUnits : null;
+    return { key: c.key, label: c.label, system: c.systemUnits, plan, gap: plan === null ? null : gapPct(plan, c.systemUnits), flagged: plan !== null && isGapFlagged(plan, c.systemUnits, settings.gapFlagPct) };
   });
 
   // Stock readiness: demand in the period with each channel's plan uplift, vs what will be left at period start.
@@ -359,4 +405,71 @@ export function consolidate(
       systemValue: rows.reduce((a, r) => a + r.systemValue, 0),
     },
   };
+}
+
+// ── stock check for a plan (marketing) ────────────────────────────────────────
+
+/** at_risk: runs out during the plan before new stock can land · tight: runs out during the plan, new stock can land
+ *  first (if it is ordered in time) · overstock: excess stock the plan does not push · ok: lasts the plan. */
+export type StockRisk = "at_risk" | "tight" | "overstock" | "ok";
+
+export interface ProductPlanTotal {
+  /** System units for the period, all channels of the plan. */
+  system: number;
+  /** Planned units for the period, all channels of the plan. */
+  planned: number;
+  /** Ad budget on the product, all channels (₹). */
+  budget: number;
+}
+
+export interface StockCheckRow extends ProductPlanTotal {
+  product: Product;
+  stock: number;
+  /** Usage per day during the plan period at the plan's pace. */
+  dailyAtPlan: number;
+  /** Days from today until the stock runs out (Infinity: it does not). */
+  daysLeft: number;
+  runOut: string | null;
+  /** When new stock can arrive: the earliest open purchase order, else today + the lead time (if ordered today). */
+  eta: string;
+  etaOnOrder: boolean;
+  risk: StockRisk;
+}
+
+const RISK_ORDER: Record<StockRisk, number> = { at_risk: 0, tight: 1, overstock: 2, ok: 3 };
+
+/**
+ * Days of stock left and when new stock arrives, for every product the plan touches. Usage runs at today's pace
+ * until the plan period starts, at the plan's pace during it (today's pace + the plan's extra units ÷ period days),
+ * and at today's pace after it.
+ */
+export function planStockCheck(ds: Dataset, metrics: ProductMetrics[], cycle: PlanCycle, totals: Record<string, ProductPlanTotal>): StockCheckRow[] {
+  const days = periodDays(cycle);
+  const leadIn = Math.max(0, diffDays(cycle.periodFrom, ds.today));
+  const end = Math.max(leadIn, diffDays(cycle.periodTo, ds.today) + 1);
+  const rows: StockCheckRow[] = [];
+  for (const m of metrics) {
+    const t = totals[m.product.id] ?? { system: 0, planned: 0, budget: 0 };
+    if (m.rate <= 0 && t.planned <= 0) continue;
+    const stock = Math.max(0, m.stock);
+    const dailyAtPlan = Math.max(0, m.rate + (t.planned - t.system) / days);
+    let daysLeft = Number.POSITIVE_INFINITY;
+    let left = stock;
+    const before = m.rate * leadIn;
+    if (before >= left && m.rate > 0) daysLeft = left / m.rate;
+    else {
+      left -= before;
+      const during = dailyAtPlan * (end - leadIn);
+      if (during >= left && dailyAtPlan > 0) daysLeft = leadIn + left / dailyAtPlan;
+      else if (m.rate > 0) daysLeft = end + (left - during) / m.rate;
+    }
+    const runOut = Number.isFinite(daysLeft) ? addDays(ds.today, Math.floor(daysLeft)) : null;
+    const onOrder = m.nextArrivalDays !== null;
+    const eta = addDays(ds.today, onOrder ? Math.max(0, m.nextArrivalDays!) : m.leadTime);
+    let risk: StockRisk = "ok";
+    if (t.planned > 0 && runOut !== null && daysLeft < end) risk = runOut < eta ? "at_risk" : "tight";
+    else if (m.status === "overstock" && t.planned <= t.system) risk = "overstock";
+    rows.push({ product: m.product, ...t, stock, dailyAtPlan, daysLeft, runOut, eta, etaOnOrder: onOrder, risk });
+  }
+  return rows.sort((a, b) => RISK_ORDER[a.risk] - RISK_ORDER[b.risk] || a.daysLeft - b.daysLeft || a.product.name.localeCompare(b.product.name));
 }

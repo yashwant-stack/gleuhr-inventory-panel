@@ -10,7 +10,7 @@ import { addDays, startOfMonth } from "../dates";
 import { DEFAULT_FORMULA_SETTINGS, type ChannelId, type FormulaSettings } from "../domain/types";
 import type { PlanSubmission } from "../data/plans";
 import { TODAY } from "../mock/dataset";
-import type { PlanPart, RoleId } from "../roles";
+import { LEGACY_ROLES, ROLES, type PlanPart, type RoleId } from "../roles";
 
 export type DatePreset = "today" | "7d" | "15d" | "30d" | "60d" | "90d" | "mtd" | "last_month" | "custom";
 
@@ -49,14 +49,12 @@ export function presetRange(p: Exclude<DatePreset, "custom">, today = panelToday
 }
 
 export interface Recipients {
-  cbo: string;
-  md: string;
-  herman: string;
-  mh: string;
-  sh: string;
-  online: string;
-  manisha: string;
-  cboWhatsapp: string;
+  management: string;
+  managementWhatsapp: string;
+  marketing: string;
+  sales: string;
+  purchase: string;
+  supply: string;
 }
 
 export interface Schedule {
@@ -127,14 +125,12 @@ interface PanelState {
 }
 
 export const DEFAULT_RECIPIENTS: Recipients = {
-  cbo: "cbo@gleuhr.com",
-  md: "md@gleuhr.com",
-  herman: "herman@gleuhr.com",
-  mh: "marketing.head@gleuhr.com",
-  sh: "sales.head@gleuhr.com",
-  online: "online.team@gleuhr.com",
-  manisha: "manisha@gleuhr.com",
-  cboWhatsapp: "+91 98xxx xxxxx",
+  management: "management@gleuhr.com",
+  managementWhatsapp: "+91 98xxx xxxxx",
+  marketing: "marketing.head@gleuhr.com",
+  sales: "sales.head@gleuhr.com",
+  purchase: "purchase@gleuhr.com",
+  supply: "supply.chain@gleuhr.com",
 };
 
 export const DEFAULT_SCHEDULE: Schedule = {
@@ -194,7 +190,7 @@ export const usePanel = create<PanelState>()(
       setSearch: (search) => set({ search }),
       resetFilters: () => set({ preset: "30d", ...presetRange("30d"), channels: [], points: [], locations: [], categories: [], search: "" }),
 
-      role: "cbo",
+      role: "management",
       setRole: (role) => set({ role }),
 
       settings: DEFAULT_FORMULA_SETTINGS,
@@ -236,12 +232,35 @@ export const usePanel = create<PanelState>()(
     }),
     {
       name: "gleuhr-inventory-panel",
-      version: 4,
+      version: 5,
       // v1 stored old-style location ids; v2 starts its filters fresh; v3 replaces the 7/30/90 weights with
       // the 60-day window (the old weights are dropped, the window starts at its default); v4 (17 Nov 2026)
-      // orders at 60 days of stock left for 60 days of cover: the old 30-day default cover becomes 60.
+      // orders at 60 days of stock left for 60 days of cover: the old 30-day default cover becomes 60; v5 (19 Nov
+      // 2026) has five roles: old roles map to the new ones, the CBO's addresses become Management's, and plans of
+      // the retired parts (D2C, clinic) are dropped.
       migrate: (persisted, version) => {
-        const p = (persisted ?? {}) as { settings?: Partial<FormulaSettings> & Record<string, unknown> };
+        const p = (persisted ?? {}) as {
+          settings?: Partial<FormulaSettings> & Record<string, unknown>;
+          role?: string;
+          recipients?: Record<string, string>;
+          submissions?: Record<string, PlanSubmission>;
+        };
+        if (version < 5) {
+          if (p.role) p.role = LEGACY_ROLES[p.role] ?? (ROLES.some((r) => r.id === p.role) ? p.role : "management");
+          const r = p.recipients ?? {};
+          p.recipients = {
+            ...DEFAULT_RECIPIENTS,
+            ...(r.cbo ? { management: r.cbo } : {}),
+            ...(r.cboWhatsapp ? { managementWhatsapp: r.cboWhatsapp } : {}),
+            ...(r.mh ? { marketing: r.mh } : {}),
+            ...(r.sh ? { sales: r.sh } : {}),
+          } as unknown as Record<string, string>;
+          p.submissions = Object.fromEntries(
+            Object.entries(p.submissions ?? {})
+              .filter(([, v]) => v.part === "marketing" || v.part === "sales")
+              .map(([k, v]) => [k, { ...v, by: LEGACY_ROLES[v.by] ?? v.by }]),
+          );
+        }
         const { weight7: _w7, weight30: _w30, weight90: _w90, ...kept } = p.settings ?? {};
         if (version < 4 && kept.defaultCoverDays === 30) kept.defaultCoverDays = DEFAULT_FORMULA_SETTINGS.defaultCoverDays;
         const settings = { ...DEFAULT_FORMULA_SETTINGS, ...kept };

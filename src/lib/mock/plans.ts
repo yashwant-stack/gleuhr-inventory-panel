@@ -38,35 +38,21 @@ export interface SeedSubmission {
 }
 
 export const SEED_SUBMISSIONS: SeedSubmission[] = [
-  // Week of 16 Nov — due today: marketing and D2C are in, sales and clinic are pending.
+  // Week of 16 Nov — due today: marketing is in (before the consent step existed, so still open), sales is pending.
   {
     cycleId: "w-2026-11-16",
     part: "marketing",
-    by: "mh",
+    by: "marketing",
     submittedAt: "2026-11-13T18:40:00+05:30",
     multipliers: { default: 1.05, website: 1.28, online_team: 1.12 },
     activities: { online_team: "Lightning offer on Vitamin-C Serum (Wed–Fri)", website: "Winter skincare bundle + email to 18k list", clinic: "Hydra-facial add-on offer at front desk" },
     budgets: { online_team: 40000, website: 45000, clinic: 15000 },
     note: "Push Spa Cream and Body Lotion in the winter bundle (overstock).",
   },
-  {
-    cycleId: "w-2026-11-16",
-    part: "d2c",
-    by: "online",
-    submittedAt: "2026-11-14T10:15:00+05:30",
-    multipliers: { default: 1.0, website: 1.22, online_team: 0.95 },
-    activities: { website: "Bundle live on Shopify 18–20 Nov", online_team: "Two agents on leave this week" },
-    budgets: {},
-    note: "",
-  },
-  // Week of 9 Nov — all in, sales one day late.
-  { cycleId: "w-2026-11-09", part: "marketing", by: "mh", submittedAt: "2026-11-06T17:05:00+05:30", multipliers: { default: 1.08 }, activities: { website: "Diwali week bundle" }, budgets: { website: 30000 }, note: "" },
-  { cycleId: "w-2026-11-09", part: "sales", by: "sh", submittedAt: "2026-11-08T11:20:00+05:30", multipliers: { default: 1.1, clinic: 1.15 }, activities: { clinic: "Festive package push" }, budgets: {}, note: "" },
-  { cycleId: "w-2026-11-09", part: "d2c", by: "online", submittedAt: "2026-11-07T16:45:00+05:30", multipliers: { default: 1.04 }, activities: {}, budgets: {}, note: "" },
-  { cycleId: "w-2026-11-09", part: "clinic", by: "manisha", submittedAt: "2026-11-07T19:10:00+05:30", multipliers: { default: 1.02, "clinic:1": 1.12 }, activities: {}, budgets: {}, note: "" },
-  // November monthly — all in, sales late (26 Oct).
-  { cycleId: "m-2026-11", part: "marketing", by: "mh", submittedAt: "2026-10-24T15:30:00+05:30", multipliers: { default: 1.12, website: 1.3 }, activities: { website: "Diwali sale event", online_team: "Festive gift boxes" }, budgets: { website: 150000, online_team: 80000 }, note: "" },
-  { cycleId: "m-2026-11", part: "sales", by: "sh", submittedAt: "2026-10-26T12:10:00+05:30", multipliers: { default: 1.15 }, activities: { clinic: "Package upsell at every clinic" }, budgets: {}, note: "" },
-  { cycleId: "m-2026-11", part: "d2c", by: "online", submittedAt: "2026-10-25T13:00:00+05:30", multipliers: { default: 1.1 }, activities: {}, budgets: {}, note: "" },
-  { cycleId: "m-2026-11", part: "clinic", by: "manisha", submittedAt: "2026-10-25T18:20:00+05:30", multipliers: { default: 1.05 }, activities: {}, budgets: {}, note: "" },
+  // Week of 9 Nov — both in, sales one day late. A "clinic:<id>" multiplier is that clinic's row in the sales plan.
+  { cycleId: "w-2026-11-09", part: "marketing", by: "marketing", submittedAt: "2026-11-06T17:05:00+05:30", multipliers: { default: 1.08 }, activities: { website: "Diwali week bundle" }, budgets: { website: 30000 }, note: "" },
+  { cycleId: "w-2026-11-09", part: "sales", by: "sales", submittedAt: "2026-11-08T11:20:00+05:30", multipliers: { default: 1.1, clinic: 1.15, "clinic:1": 1.25 }, activities: { clinic: "Festive package push" }, budgets: {}, note: "" },
+  // November monthly — both in, sales late (26 Oct).
+  { cycleId: "m-2026-11", part: "marketing", by: "marketing", submittedAt: "2026-10-24T15:30:00+05:30", multipliers: { default: 1.12, website: 1.3 }, activities: { website: "Diwali sale event", online_team: "Festive gift boxes" }, budgets: { website: 150000, online_team: 80000 }, note: "" },
+  { cycleId: "m-2026-11", part: "sales", by: "sales", submittedAt: "2026-10-26T12:10:00+05:30", multipliers: { default: 1.15 }, activities: { clinic: "Package upsell at every clinic" }, budgets: {}, note: "" },
 ];

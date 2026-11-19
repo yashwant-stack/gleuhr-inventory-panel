@@ -11,7 +11,7 @@ npm install
 npm run dev        # then open http://localhost:3000
 ```
 
-Use **“Viewing as”** in the top bar to see the panel as each person: CBO (admin), MD / Herman (view only), Marketing Head, Sales Head, Online product team, Manisha (planners).
+Use **“Viewing as”** in the top bar to see the panel as each person: Management (admin: approves, changes settings), Marketing and Sales head (planners), Purchase and Supply chain head (view only). The marketing plan is planned product by product with ad budgets, checked against stock, confirmed with the MD's approval and then locked; the Sales head plans the clinics clinic by clinic.
 
 ## The pages
 
@@ -22,10 +22,10 @@ Use **“Viewing as”** in the top bar to see the panel as each person: CBO (ad
 | Channels | Each channel’s sales, growth and next-30-day forecast; D2C total; clinic-wise sales |
 | Projections | 7 / 15 / 30 / 60 / 90-day projections per product and channel |
 | Stock health | Current stock (warehouse + every clinic), days of cover, Critical / Low / Healthy / Overstock / No sales, clinic transfer suggestions, overstock value |
-| Auto indent | What to order now and how much; “what if stock takes 7–90 days”; stock indent for 15 / 30 / 60 / 90 days; approve (CBO); export the purchase list |
+| Auto indent | What to order now and how much; “what if stock takes 7–90 days”; stock indent for 15 / 30 / 60 / 90 days; approve (Management); export the purchase list |
 | Plans | Monthly (23rd → 25th → 26th) and weekly (Thu → Sat → Mon) cycles; who has submitted; plan vs actual; the upload form for each person |
-| Reports | Consolidated projection report for the CBO (system + trend + team plans, gap flags, stock readiness); the report chain from overall sales down to current stock; Download PDF (print) |
-| Alerts | Today’s stock alert as the CBO receives it (WhatsApp and email preview), the full schedule, the sent log |
+| Reports | Consolidated projection report for Management (system + trend + team plans, gap flags, stock readiness); the report chain from overall sales down to current stock; Download PDF (print) |
+| Alerts | Today’s stock alert as Management receives it (WhatsApp and email preview), the full schedule, the sent log |
 | Settings | Every threshold (sales window, safety days, overstock limit, cover, gap flag, transfer rules), vendor lead times, recipients, schedule |
 
 Click any product anywhere to open its detail panel, which shows **how every number was worked out**, step by step.
@@ -51,7 +51,7 @@ Settings, lead-time changes, indent approvals and submitted plans are kept in th
 
 ## Visibly switched off until the backend exists
 
-Create POs in Zoho · Email report to CBO now · Send a test alert · Attach a plan file. Each is shown greyed out with a plain-words reason on hover.
+Create POs in Zoho · Email report to Management now · Send a test alert · Attach a plan file. Each is shown greyed out with a plain-words reason on hover.
 
 ## Checks
 

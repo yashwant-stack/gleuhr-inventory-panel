@@ -5,7 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { LoadScreen } from "../../components/LoadScreen";
 import { getDataset } from "../mock/dataset";
 import { CYCLES } from "../mock/plans";
-import { roleById, type PlanPart } from "../roles";
+import { PLAN_PARTS, roleById, type PlanPart } from "../roles";
 import { setPanelToday, usePanel } from "../state/store";
 import { computeMetrics, type Filters } from "./engine";
 import { decodeDataset, type Dataset, type DatasetWire } from "./model";
@@ -97,7 +97,7 @@ export function useSubmissions(): Record<string, PlanSubmission> {
 
 export function cycleSubmissions(all: Record<string, PlanSubmission>, cycleId: string): Partial<Record<PlanPart, PlanSubmission>> {
   const out: Partial<Record<PlanPart, PlanSubmission>> = {};
-  for (const part of ["marketing", "sales", "d2c", "clinic"] as PlanPart[]) {
+  for (const part of PLAN_PARTS.map((p) => p.id) as PlanPart[]) {
     const s = all[`${cycleId}:${part}`];
     if (s) out[part] = s;
   }

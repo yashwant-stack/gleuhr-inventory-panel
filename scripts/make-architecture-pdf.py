@@ -216,7 +216,7 @@ def calc_flow():
         ("4 · Reorder point", "Sells per day × 60 days (or × the lead time, when the lead time is longer than 60 days)."),
         ("5 · Status", "No sales → Critical → Low → Overstock → Healthy, checked in that order (rules on the next page)."),
         ("6 · Order quantity (only once due)", "Sells per day × (lead time 60 + cover 60) − stock − on the way, rounded up to the pack size. 60 days of stock are left when it lands."),
-        ("7 · Approve → order in Zoho", "CBO approves on Auto indent (marks the line agreed). The purchase order is raised in Zoho; the next sync reads it as \"on the way\"."),
+        ("7 · Approve → order in Zoho", "Management approves on Auto indent (marks the line agreed). The purchase order is raised in Zoho; the next sync reads it as \"on the way\"."),
     ]
     W, bh, gap = CW, 50, 14
     H = len(steps) * bh + (len(steps) - 1) * gap + 4
@@ -257,7 +257,7 @@ def ops_flow():
         ("Sync (every 2 hours)", "Stock from Zoho, sales from the CRM, open POs (daily)."),
         ("Home · Products that need action", "Critical and Low first; order for 7/15/30/60/90 days."),
         ("Auto indent", "Quantity, order-by date, arrival date and value at cost for every due product."),
-        ("CBO approves", "Marks the lines agreed. Nothing is sent to Zoho."),
+        ("Management approves", "Marks the lines agreed. Nothing is sent to Zoho."),
         ("Purchase order in Zoho", "Raised by the purchase team as today."),
         ("Next daily sync", "Reads the open PO: \"on the way\"; the product is no longer Critical if it lands in time."),
         ("Stock lands", "Zoho stock rises; status returns to Healthy."),
@@ -286,7 +286,7 @@ def on_page(c, doc):
     if doc.page > 1:
         c.setFont("DV", 7.5)
         c.setFillColor(MUTED)
-        c.drawString(M, 10 * mm, "Gleuhr Inventory Planning Panel · Architecture and flow · 18 Nov 2026")
+        c.drawString(M, 10 * mm, "Gleuhr Inventory Planning Panel · Architecture and flow · 19 Nov 2026")
         c.drawRightString(PAGE_W - M, 10 * mm, f"Page {doc.page}")
     c.restoreState()
 
@@ -307,8 +307,8 @@ cover_rows = [
     ["Status", "Live data: stock from Zoho Inventory, sales from the clinic + online CRM"],
     ["Hosting", "Vercel (Next.js) · the panel's tables in the CRM database's own schema, through a gateway function"],
     ["Rules in force", "Sells per day = last 60 days ÷ 60 · lead time 60 days · order when 60 days are left · order for 60 days"],
-    ["Code version", "commit 922b273 (18 Nov 2026)"],
-    ["Date", "18 November 2026"],
+    ["Code version", "develop branch, 19 Nov 2026"],
+    ["Date", "19 November 2026"],
 ]
 t = Table([[Paragraph(a, ss["cellb"]), Paragraph(b, ss["cell"])] for a, b in cover_rows[1:]], colWidths=[34 * mm, CW - 34 * mm])
 t.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.5, LINE), ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -370,7 +370,7 @@ S += [P("3 · Security and access", "h1"),
              ["Zoho", "OAuth refresh token (India data centre). The panel only reads; it never posts stock changes. Calls are budgeted: ≤ 10 a minute, ≤ 600 a day."],
              ["Secrets", "Live only in Vercel → Settings → Environment Variables (and a local .env.local that is never committed). Every code zip is scanned for secret values before it is shared."],
              ["Snapshot link", "The shareable one-file page is encrypted (AES-256-GCM, key derived from the access key with PBKDF2, 600,000 rounds). Without the key it shows nothing."],
-             ["Roles on screen", "CBO (admin), MD and Herman (viewers), four planners. Today the role is picked in the top bar after the access key: it shapes the screens but is not yet a login."]],
+             ["Roles on screen", "Five roles: Management (approves, changes settings), Marketing and Sales head (fill the plans), Purchase and Supply chain head (see every page, change nothing). Today the role is picked in the top bar after the access key: it shapes the screens but is not yet a login."]],
             [34 * mm, CW - 34 * mm], zebra=True),
       Spacer(1, 6),
       P("Environment variables on Vercel", "h2"),
@@ -482,7 +482,8 @@ S += [P("8 · Status rules, transfers and projections", "h1"),
 S += bullets([
     "<b>Projection</b> for 7 / 15 / 30 / 60 / 90 days = sells per day × days (an optional trend factor, off by default, can scale it within ±25%).",
     "<b>Channels</b>: each channel's sales, growth and next-30-day forecast. A growth % shows only when the sales points behind it were recording through the whole previous period; otherwise “earlier data incomplete”.",
-    "<b>Plans</b>: four planners submit their part each week (marketing, sales, D2C, clinic). A plan more than ±20% away from the system's projection is flagged; Reports lays plans against the projection.",
+    "<b>Plans</b>: two plans each week and month: Marketing and the Sales head (the Sales head plans the clinics clinic by clinic; the separate clinic and D2C plans were retired on 19 Nov). A plan more than ±20% away from the system's projection is flagged; Reports lays plans against the projection.",
+    "<b>Marketing plan: stock check, consent and lock</b>: each product has an ad budget; section C shows each product's days of stock left at the plan's pace and when new stock can arrive. Submitting opens a popup listing products at risk of running out (with their ad budget and new-stock date) and overstock the plan does not push; Marketing ticks that the risks were checked and that the plan was discussed with and approved by the MD. The plan is then locked; only Management can reopen it.",
     "<b>Marketing plan, product by product</b>: inside each channel (clinics, online team, website) the Marketing Head sees every product with its stock now, last 30 days and the system's expected units, and types their own expected units. The channel total is the sum of its products, and each product's own plan feeds the stock-shortfall check.",
 ])
 S.append(PageBreak())
@@ -491,22 +492,20 @@ S.append(PageBreak())
 S += [P("9 · Operating flow: who does what", "h1"),
       ops_flow(), Spacer(1, 8),
       table([["Who", "Access", "Uses the panel to"],
-             ["CBO", "Admin: every page; approves; changes settings", "Approve Auto indent lines; set lead times and thresholds; read Reports and Alerts"],
-             ["MD, Herman", "Viewer: every page, no changes", "Follow stock health, orders, reports and data health"],
-             ["Marketing Head", "Planner", "Submit the weekly marketing plan (campaigns, offers, expected units)"],
-             ["Sales Head", "Planner", "Submit the weekly sales plan"],
-             ["Online product team", "Planner", "Review and adjust the D2C projection (website, online team, marketplaces)"],
-             ["Manisha", "Planner", "Review and adjust the clinic-wise projection"],
-             ["Purchase team", "(outside the panel)", "Raise the purchase order in Zoho for approved lines"],
+             ["Management", "Admin: every page; approves; changes settings", "Approve Auto indent lines; set lead times and thresholds; reopen a locked plan; read Reports and Alerts"],
+             ["Marketing", "Planner", "Submit the marketing plan product by product, with ad budgets; confirm the stock warnings and the MD's approval"],
+             ["Sales head", "Planner", "Submit the sales plan: each channel, and the clinics clinic by clinic"],
+             ["Purchase", "Viewer: every page, no changes", "Follow Auto indent; raise the purchase order in Zoho for approved lines"],
+             ["Supply chain head", "Viewer: every page, no changes", "Follow stock health and the transfers between Mohali and the clinics"],
              ["Vercel Cron", "System", "Run the sync every 2 hours and the daily check"]],
             [32 * mm, 52 * mm, CW - 84 * mm], zebra=True),
       Spacer(1, 4),
-      P("Planners see Home, Sales, Channels, Projections, Stock health and Plans. Auto indent, Reports, Alerts, Settings and Data health are for the CBO and viewers.", "small")]
+      P("Planners see Home, Sales, Channels, Projections, Stock health and Plans. Auto indent, Reports, Alerts, Settings and Data health are for Management, Purchase and the Supply chain head.", "small")]
 S.append(PageBreak())
 
 # ---------- 10 settings ----------
 S += [P("10 · Settings and their defaults", "h1"),
-      P("Every threshold is a setting, not a fixed number in the code. The CBO changes them on the Settings page; every page recalculates at once."),
+      P("Every threshold is a setting, not a fixed number in the code. Management changes them on the Settings page; every page recalculates at once."),
       table([["Setting", "Default", "Used for"],
              ["Sales window", "60 days", "Sells per day = last 60 days ÷ 60"],
              ["Lead time (no supplier lead time set)", "60 days", "Per supplier and per product overrides on Settings / the product drawer"],
@@ -532,7 +531,7 @@ S += [P("11 · Screens", "h1"),
              ["Channels", "Each channel's sales, growth and next-30-day forecast; D2C total; clinic-wise sales."],
              ["Projections", "7 / 15 / 30 / 60 / 90-day projections per product and channel."],
              ["Stock health", "Stock per product and location, days of stock and status; send to clinics; clinic-to-clinic moves; overstock."],
-             ["Auto indent", "What to order now and how much, order-by and arrival dates, value at cost; what-if tables for lead time 7–90 days and cover 7–90 days; CBO approval."],
+             ["Auto indent", "What to order now and how much, order-by and arrival dates, value at cost; what-if tables for lead time 7–90 days and cover 7–90 days; Management approval."],
              ["Plans", "The weekly plan cycle: each planner's part, on time or late, gaps against the projection."],
              ["Reports", "The chain from stock facts up to the big picture: low stock and overstock, the order projection, plans vs system."],
              ["Alerts", "Preview of the daily stock alert and the critical alert, with the schedule and recipients. Sending by email / WhatsApp is not connected yet."],

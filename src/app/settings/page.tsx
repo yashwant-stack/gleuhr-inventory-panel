@@ -97,10 +97,10 @@ export default function SettingsPage() {
         sub="Every threshold is a setting, never fixed in code. Defaults are the decided values from “Rules & Formulas”."
         right={
           <>
-            <Button icon={<RotateCcw size={14} />} onClick={reset} disabled={ro} disabledReason="Only an admin (CBO) can change settings">
+            <Button icon={<RotateCcw size={14} />} onClick={reset} disabled={ro} disabledReason="Only Management can change settings">
               Reset to defaults
             </Button>
-            <Button variant="primary" icon={<Save size={14} />} onClick={save} disabled={ro || !windowOk || !dirty} disabledReason={ro ? "Only an admin (CBO) can change settings" : !windowOk ? "Choose a sales window between 7 and 180 days" : "Nothing changed yet"}>
+            <Button variant="primary" icon={<Save size={14} />} onClick={save} disabled={ro || !windowOk || !dirty} disabledReason={ro ? "Only Management can change settings" : !windowOk ? "Choose a sales window between 7 and 180 days" : "Nothing changed yet"}>
               Save changes
             </Button>
           </>
@@ -108,7 +108,7 @@ export default function SettingsPage() {
       />
       {ro ? (
         <div className="mb-3">
-          <Note tone="warn">Read only: {role.person} can see the settings; only an admin (CBO) can change them.</Note>
+          <Note tone="warn">Read only: {role.person} can see the settings; only Management can change them.</Note>
         </div>
       ) : null}
 
@@ -124,7 +124,7 @@ export default function SettingsPage() {
         </div>
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
           <Field group label="Trend factor" help="Multiplies projections by last 30 days ÷ the 30 days before">
-            <Segmented value={f.useTrendFactor ? "on" : "off"} onChange={(v) => set("useTrendFactor", v === "on")} disabled={ro} disabledReason="Only an admin (CBO) can change settings" label="Trend factor" options={[{ value: "off", label: "Off" }, { value: "on", label: "On" }]} />
+            <Segmented value={f.useTrendFactor ? "on" : "off"} onChange={(v) => set("useTrendFactor", v === "on")} disabled={ro} disabledReason="Only Management can change settings" label="Trend factor" options={[{ value: "off", label: "Off" }, { value: "on", label: "On" }]} />
           </Field>
           <Field label="Trend factor cap" help="Largest change it may apply, up or down">
             <NumInput value={f.trendCapPct} onChange={(n) => set("trendCapPct", n)} disabled={ro || !f.useTrendFactor} suffix="±%" max={100} />
@@ -145,7 +145,7 @@ export default function SettingsPage() {
             <NumInput value={f.overstockDays} onChange={(n) => set("overstockDays", n)} disabled={ro} suffix="days" min={15} max={365} />
           </Field>
           <Field group label="Default cover for auto indent" help="How long an order should last after it arrives">
-            <Segmented<number> value={f.defaultCoverDays} onChange={(v) => set("defaultCoverDays", v)} disabled={ro} disabledReason="Only an admin (CBO) can change settings" label="Default cover" options={COVER_OPTIONS.map((c) => ({ value: c, label: `${c}d` }))} />
+            <Segmented<number> value={f.defaultCoverDays} onChange={(v) => set("defaultCoverDays", v)} disabled={ro} disabledReason="Only Management can change settings" label="Default cover" options={COVER_OPTIONS.map((c) => ({ value: c, label: `${c}d` }))} />
           </Field>
           <Field label="Plan gap flag" help="Team plan vs system projection difference that gets flagged">
             <NumInput value={f.gapFlagPct} onChange={(n) => set("gapFlagPct", n)} disabled={ro} suffix="±%" max={100} />
@@ -178,7 +178,7 @@ export default function SettingsPage() {
                   value={String(cur ?? "default")}
                   width={190}
                   disabled={ro}
-                  disabledReason="Only an admin (CBO) can change lead times"
+                  disabledReason="Only Management can change lead times"
                   onChange={(val) => {
                     store.setLeadOverride(`vendor:${v.id}`, val === "default" ? null : Number(val));
                     toast(`Lead time for ${v.name.split(" · ")[0]} saved in this browser.`);
@@ -192,31 +192,25 @@ export default function SettingsPage() {
       </Card>
 
       <Card className="mt-3">
-        <CardHeader title="Who receives what" sub="All automatic emails go to, or copy, the CBO. Monthly plan emails also copy the MD and Herman." />
+        <CardHeader title="Who receives what" sub="All automatic emails go to, or copy, Management. Stock alerts also copy Purchase and the Supply chain head." />
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="CBO email">
-            <TextInput type="email" value={r.cbo} onChange={(v) => setR({ ...r, cbo: v })} disabled={ro} />
+          <Field label="Management email">
+            <TextInput type="email" value={r.management} onChange={(v) => setR({ ...r, management: v })} disabled={ro} />
           </Field>
-          <Field label="CBO WhatsApp number" help="Stock alerts and critical alerts">
-            <TextInput value={r.cboWhatsapp} onChange={(v) => setR({ ...r, cboWhatsapp: v })} disabled={ro} />
+          <Field label="Management WhatsApp number" help="Stock alerts and critical alerts">
+            <TextInput value={r.managementWhatsapp} onChange={(v) => setR({ ...r, managementWhatsapp: v })} disabled={ro} />
           </Field>
-          <Field label="MD email">
-            <TextInput type="email" value={r.md} onChange={(v) => setR({ ...r, md: v })} disabled={ro} />
+          <Field label="Marketing email">
+            <TextInput type="email" value={r.marketing} onChange={(v) => setR({ ...r, marketing: v })} disabled={ro} />
           </Field>
-          <Field label="Herman email">
-            <TextInput type="email" value={r.herman} onChange={(v) => setR({ ...r, herman: v })} disabled={ro} />
+          <Field label="Sales head email">
+            <TextInput type="email" value={r.sales} onChange={(v) => setR({ ...r, sales: v })} disabled={ro} />
           </Field>
-          <Field label="Marketing Head email">
-            <TextInput type="email" value={r.mh} onChange={(v) => setR({ ...r, mh: v })} disabled={ro} />
+          <Field label="Purchase email">
+            <TextInput type="email" value={r.purchase} onChange={(v) => setR({ ...r, purchase: v })} disabled={ro} />
           </Field>
-          <Field label="Sales Head email">
-            <TextInput type="email" value={r.sh} onChange={(v) => setR({ ...r, sh: v })} disabled={ro} />
-          </Field>
-          <Field label="Online product team email">
-            <TextInput type="email" value={r.online} onChange={(v) => setR({ ...r, online: v })} disabled={ro} />
-          </Field>
-          <Field label="Manisha email">
-            <TextInput type="email" value={r.manisha} onChange={(v) => setR({ ...r, manisha: v })} disabled={ro} />
+          <Field label="Supply chain head email">
+            <TextInput type="email" value={r.supply} onChange={(v) => setR({ ...r, supply: v })} disabled={ro} />
           </Field>
         </div>
         <p className="mt-2 text-[11.5px] text-muted">Placeholder addresses. Put the real ones in before go-live.</p>
@@ -244,7 +238,7 @@ export default function SettingsPage() {
           </Field>
           {(["weeklyRequestDay", "weeklyDueDay", "weeklyReportDay"] as const).map((k) => (
             <Field group key={k} label={k === "weeklyRequestDay" ? "Weekly request" : k === "weeklyDueDay" ? "Weekly deadline" : "Weekly consolidated report"}>
-              <Select<string> value={s[k]} onChange={(v) => setS({ ...s, [k]: v })} disabled={ro} disabledReason="Only an admin (CBO) can change the schedule" width={180} options={WEEKDAYS.map((d) => ({ value: d, label: d }))} />
+              <Select<string> value={s[k]} onChange={(v) => setS({ ...s, [k]: v })} disabled={ro} disabledReason="Only Management can change the schedule" width={180} options={WEEKDAYS.map((d) => ({ value: d, label: d }))} />
             </Field>
           ))}
         </div>

@@ -34,24 +34,24 @@ const HASH = { '/': '', '/sales': 'sales', '/channels': 'channels', '/projection
   await p.waitForTimeout(300);
   ok((await p.locator('h1').innerText()) === 'Home', 'browser Back returns to Home');
 
-  await role('Sales Head');
+  await role('Sales head');
   await go('/plans');
   await p.getByRole('link', { name: 'Fill my plan' }).click();
   await p.waitForTimeout(400);
   ok(p.url().endsWith('#plan-form') && (await p.locator('h1').innerText()).startsWith('Sales plan'), 'plan link opens #plan-form with the right plan');
-  const first = p.getByLabel(/Expected units for Clinics/);
+  const first = p.getByLabel(/Expected units for Online team/);
   await first.fill(String(Math.round(Number(await first.inputValue()) * 1.3)));
   await p.getByRole('button', { name: 'Submit plan' }).click();
   await p.waitForTimeout(400);
   ok(p.url().endsWith('#plans') && (await p.locator('tr', { hasText: 'Sales plan' }).innerText()).includes('Submitted on time'), 'plan submitted, back on #plans');
 
   await go('/indent');
-  ok((await p.locator('main').innerText()).includes("can’t open this page"), 'Sales Head blocked from Auto indent');
-  await role('CBO');
+  ok((await p.locator('main').innerText()).includes("can’t open this page"), 'Sales head blocked from Auto indent');
+  await role('Management');
   await go('/indent');
   await p.getByLabel('Select Hair Serum').check();
   await p.getByRole('button', { name: /Approve selected \(1\)/ }).click();
-  ok((await p.locator('tr', { hasText: 'Hair Serum' }).innerText()).includes('Approved 375'), 'CBO approved Hair Serum 375');
+  ok((await p.locator('tr', { hasText: 'Hair Serum' }).innerText()).includes('Approved 375'), 'Management approved Hair Serum 375');
   const exp = p.getByRole('button', { name: /Export purchase list/ });
   ok((await exp.getAttribute('aria-disabled')) === 'true' && ((await exp.getAttribute('title')) || '').includes('preview'), 'Export is switched off in the preview, with a reason');
 

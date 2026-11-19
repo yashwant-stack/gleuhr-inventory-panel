@@ -27,14 +27,14 @@ export default function ReportsPage() {
     <div>
       <PageHeader
         title="Reports"
-        sub="The consolidated projection report that goes to the CBO, and the report chain from overall sales down to current stock."
+        sub="The consolidated projection report that goes to Management, and the report chain from overall sales down to current stock."
         right={
           <>
             <Button icon={<Printer size={14} />} onClick={() => window.print()} disabled={IS_PREVIEW} disabledReason={PREVIEW_NO_PRINT}>
               Download PDF
             </Button>
             <Button icon={<Mail size={14} />} disabled disabledReason="Emailing the report works once email is connected (backend stage).">
-              Email to CBO now
+              Email to Management now
             </Button>
           </>
         }
@@ -82,7 +82,7 @@ function ConsolidatedReport() {
           options={ordered.map((c) => ({ value: c.id, label: c.label, hint: `${c.kind} · report ${fmtDay(c.reportOn)}` }))}
         />
         <span className="text-[12.5px] text-muted">
-          {cycle.reportOn > ds.today ? "Goes to the CBO on" : "Sent to the CBO on"} {fmtDay(cycle.reportOn)}
+          {cycle.reportOn > ds.today ? "Goes to Management on" : "Sent to Management on"} {fmtDay(cycle.reportOn)}
           {state === "upcoming" ? " · plans not requested yet, shows the system projection only" : ""}
         </span>
       </div>
@@ -95,7 +95,7 @@ function ConsolidatedReport() {
               {cycle.label} · {fmtRange(cycle.periodFrom, cycle.periodTo)} ({periodDays(cycle)} days)
             </h2>
           </div>
-          <div className="text-[12px] text-muted">System projection + current trend + team plans · to CBO</div>
+          <div className="text-[12px] text-muted">System projection + current trend + team plans · to Management</div>
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -114,7 +114,6 @@ function ConsolidatedReport() {
                 <th className="num">System projection</th>
                 <th className="num">Sales plan</th>
                 <th className="num">Marketing expects</th>
-                <th className="num">D2C / clinic team</th>
                 <th className="num">Gap vs system</th>
               </tr>
             </thead>
@@ -127,22 +126,21 @@ function ConsolidatedReport() {
                   <td className="num">{fmtInt(r.system)}</td>
                   <td className="num">{r.salesPlan !== null ? fmtInt(r.salesPlan) : <span className="text-muted">not in</span>}</td>
                   <td className="num">{r.marketing !== null ? fmtInt(r.marketing) : <span className="text-muted">not in</span>}</td>
-                  <td className="num">{r.team !== null ? fmtInt(r.team) : <span className="text-muted">not in</span>}</td>
                   <td className={clsx("num", r.flagged && "font-semibold text-st-low")}>{r.gap !== null ? `${fmtPct(r.gap, true)}${r.flagged ? " ⚑" : ""}` : "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <p className="mt-1 text-[11.5px] text-muted">Gap compares the sales plan (or, if it is not in, the D2C / clinic team, then marketing) with the system projection.</p>
+        <p className="mt-1 text-[11.5px] text-muted">Gap compares the sales plan (or, if it is not in, the marketing plan) with the system projection.</p>
 
-        <h3 className="mt-5 mb-2 text-[14px] font-semibold">2 · Clinic-wise (Manisha)</h3>
+        <h3 className="mt-5 mb-2 text-[14px] font-semibold">2 · Clinic-wise (Sales head plan)</h3>
         <div className="grid gap-x-6 md:grid-cols-2">
           {report.clinics.map((c) => (
             <div key={c.key} className="flex items-center justify-between border-b border-line py-1.5 text-[13px]">
               <span className="font-medium">{c.label}</span>
               <span className="tabular">
-                {fmtInt(c.system)} → {c.team !== null ? <b>{fmtInt(c.team)}</b> : <span className="text-muted">not in</span>}{" "}
+                {fmtInt(c.system)} → {c.plan !== null ? <b>{fmtInt(c.plan)}</b> : <span className="text-muted">not in</span>}{" "}
                 <span className={clsx("ml-1 inline-block w-14 text-right", c.flagged ? "font-semibold text-st-low" : "text-muted")}>{c.gap !== null ? fmtPct(c.gap, true) : ""}</span>
               </span>
             </div>

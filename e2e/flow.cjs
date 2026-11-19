@@ -24,17 +24,20 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   await p.screenshot({ path: OUT + '/drawer.png' });
   await drawer.getByRole('button', { name: 'Close' }).click();
 
-  // 2. Sales Head fills the weekly plan
-  await role('Sales Head');
+  // 2. Sales head fills the weekly plan
+  await role('Sales head');
   await p.goto(B + '/plans', { waitUntil: 'networkidle' });
   await p.getByRole('link', { name: 'Fill my plan' }).click();
   await p.waitForURL(/plans\/form/);
-  const first = p.getByLabel(/Expected units for Clinics/);
+  const first = p.getByLabel(/Expected units for Online team/);
   const sys = Number((await first.inputValue()));
   await first.fill(String(Math.round(sys * 1.3)));
   const flagged = await p.locator('td', { hasText: '⚑' }).count();
   ok(flagged >= 1, 'plan form: +30% change is flagged');
-  await p.getByLabel(/Activity for Clinics/).fill('Winter package push at all clinics');
+  await p.getByLabel(/Activity for Online team/).fill('Winter package push online');
+  await p.getByRole('button', { name: /^Clinics by clinic/ }).click();
+  const clinicBoxes = p.locator('#clinics-clinic').getByLabel(/Expected units for .* \(Clinics\)/);
+  ok((await clinicBoxes.count()) >= 10, 'sales plan: Clinics opens clinic by clinic (the clinic plan merged in)');
   await p.screenshot({ path: OUT + '/planform.png', fullPage: true });
   await p.getByRole('button', { name: 'Submit plan' }).click();
   await p.waitForURL(/\/plans$/);
@@ -44,14 +47,14 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
 
   // 3. Planner cannot open Auto indent
   await p.goto(B + '/indent', { waitUntil: 'networkidle' });
-  ok((await p.locator('main').innerText()).includes("can’t open this page"), 'access: Sales Head is blocked from Auto indent');
+  ok((await p.locator('main').innerText()).includes("can’t open this page"), 'access: Sales head is blocked from Auto indent');
 
-  // 4. CBO approves an indent line
-  await role('CBO');
+  // 4. Management approves an indent line
+  await role('Management');
   await p.goto(B + '/indent', { waitUntil: 'networkidle' });
   await p.getByLabel('Select Hair Serum').check();
   await p.getByRole('button', { name: /Approve selected \(1\)/ }).click();
-  ok((await p.locator('tr', { hasText: 'Hair Serum' }).innerText()).includes('Approved 375'), 'indent: CBO approved Hair Serum 375');
+  ok((await p.locator('tr', { hasText: 'Hair Serum' }).innerText()).includes('Approved 375'), 'indent: Management approved Hair Serum 375');
 
   // 5. Lead-time matrix tab
   await p.getByRole('tab', { name: 'If stock takes 7–90 days' }).click();
@@ -77,11 +80,11 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   await p.goto(B + '/settings', { waitUntil: 'networkidle' });
   await p.getByRole('button', { name: 'Reset to defaults' }).click();
 
-  // 7b. A viewer sees Settings read only
-  await role('MD');
+  // 7b. A viewer (Purchase) sees Settings read only
+  await role('Purchase');
   await p.goto(B + '/settings', { waitUntil: 'networkidle' });
-  ok((await p.locator('main').innerText()).includes('Read only') && (await p.getByRole('group', { name: 'Trend factor' }).getByRole('radio', { name: 'On', exact: true }).isDisabled()), 'settings: MD sees read only, option buttons locked');
-  await role('CBO');
+  ok((await p.locator('main').innerText()).includes('Read only') && (await p.getByRole('group', { name: 'Trend factor' }).getByRole('radio', { name: 'On', exact: true }).isDisabled()), 'settings: Purchase sees read only, option buttons locked');
+  await role('Management');
 
   // 8. Remaining pages render without errors
   for (const path of ['/sales', '/projections', '/alerts', '/settings', '/channels', '/stock?status=overstock']) {

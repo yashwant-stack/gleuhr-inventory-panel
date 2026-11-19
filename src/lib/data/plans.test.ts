@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_FORMULA_SETTINGS as S } from "../domain/types";
 import { getDataset } from "../mock/dataset";
-import { computeMetrics } from "./engine";
-import { consolidate, cycleById, planBaseline, spreadPlan, type PlanSubmission } from "./plans";
+import { addDays } from "../dates";
+import type { PlanCycle } from "../mock/plans";
+import { computeMetrics, type ProductMetrics } from "./engine";
+import { clinicSplit, consolidate, cycleById, planBaseline, planStockCheck, spreadPlan, type PlanSubmission } from "./plans";
 
 const ds = getDataset();
 const metrics = computeMetrics(ds, S);
@@ -38,7 +40,7 @@ describe("the marketing plan, product by product", () => {
     const sub = (factor: (id: string) => number): PlanSubmission => ({
       cycleId: cycle.id,
       part: "marketing",
-      by: "mh",
+      by: "marketing",
       submittedAt: "2026-11-24T10:00:00.000Z",
       note: "",
       version: 1,
@@ -59,5 +61,56 @@ describe("the marketing plan, product by product", () => {
     const after = tripled.readiness.find((r) => r.product.id === pick.product.id)!;
     expect(after.demand).toBeGreaterThan(pick.demand);
     for (const r of flat.readiness) if (r.product.id !== pick.product.id) expect(tripled.readiness.find((x) => x.product.id === r.product.id)?.demand).toBe(r.demand);
+  });
+});
+
+describe("the sales plan, clinic by clinic (the clinic plan merged in)", () => {
+  const sales = planBaseline(ds, S, "sales", cycle);
+  const clinicLine = sales.find((b) => b.key === "clinic")!;
+
+  it("the clinics add up exactly to the Clinics line", () => {
+    const rows = clinicSplit(ds, S, cycle, clinicLine.systemUnits);
+    expect(rows.length).toBe(ds.clinics.filter((c) => c.active).length);
+    expect(rows.reduce((a, r) => a + r.systemUnits, 0)).toBe(clinicLine.systemUnits);
+  });
+
+  it("the report reads each clinic's number from the sales plan, and the sales plan wins over marketing", () => {
+    const rows = clinicSplit(ds, S, cycle, clinicLine.systemUnits);
+    const clinics = rows.map((r, i) => ({ key: r.key, label: r.label, systemUnits: r.systemUnits, plannedUnits: r.systemUnits + (i === 0 ? 10 : 0) }));
+    const sub: PlanSubmission = {
+      cycleId: cycle.id, part: "sales", by: "sales", submittedAt: "2026-11-24T10:00:00.000Z", note: "", version: 1,
+      lines: sales.map((b) => (b.key === "clinic" ? { key: b.key, label: b.label, systemUnits: b.systemUnits, plannedUnits: b.systemUnits + 10, activity: "", budget: 0, clinics } : { key: b.key, label: b.label, systemUnits: b.systemUnits, plannedUnits: b.systemUnits, activity: "", budget: 0 })),
+    };
+    const report = consolidate(ds, S, metrics, cycle, { sales: sub });
+    expect(report.rows.find((r) => r.channel === "clinic")!.plan).toBe(clinicLine.systemUnits + 10);
+    expect(report.clinics[0]!.plan).toBe(rows[0]!.systemUnits + 10);
+    expect(report.clinics[1]!.plan).toBe(rows[1]!.systemUnits);
+    expect(consolidate(ds, S, metrics, cycle, {}).clinics.every((c) => c.plan === null)).toBe(true);
+  });
+});
+
+describe("the plan's stock check: days left and when new stock arrives", () => {
+  const today = ds.today;
+  const week: PlanCycle = { id: "t", kind: "weekly", label: "test week", periodFrom: addDays(today, 3), periodTo: addDays(today, 9), requestOn: today, dueOn: today, reportOn: today };
+  const base = metrics.find((m) => m.rate > 0)!;
+  const fake = (over: Partial<ProductMetrics> & { id: string }): ProductMetrics =>
+    ({ ...base, product: { ...base.product, id: over.id, name: over.id }, rate: 10, stock: 100, leadTime: 60, nextArrivalDays: null, status: "healthy", ...over }) as ProductMetrics;
+
+  it("a plan that doubles sales empties the shelf in 6½ days, long before new stock (60 days): at risk", () => {
+    // 3 days at 10 a day (30), then 20 a day: 70 ÷ 20 = 3.5 more days
+    const [r] = planStockCheck(ds, [fake({ id: "A" })], week, { A: { system: 70, planned: 140, budget: 20000 } });
+    expect(r).toMatchObject({ risk: "at_risk", dailyAtPlan: 20, daysLeft: 6.5, runOut: addDays(today, 6), eta: addDays(today, 60), etaOnOrder: false, budget: 20000 });
+  });
+  it("the same plan with an order landing in 2 days is tight, not at risk", () => {
+    const [r] = planStockCheck(ds, [fake({ id: "B", nextArrivalDays: 2 })], week, { B: { system: 70, planned: 140, budget: 0 } });
+    expect(r).toMatchObject({ risk: "tight", eta: addDays(today, 2), etaOnOrder: true });
+  });
+  it("at the system's own pace 100 units last 10 days, past the week: OK", () => {
+    const [r] = planStockCheck(ds, [fake({ id: "C" })], week, { C: { system: 70, planned: 70, budget: 0 } });
+    expect(r).toMatchObject({ risk: "ok", daysLeft: 10 });
+  });
+  it("overstock the plan does not push is flagged; a product with no sales and no plan is left out", () => {
+    const rows = planStockCheck(ds, [fake({ id: "D", stock: 5000, status: "overstock" }), fake({ id: "E", rate: 0 })], week, { D: { system: 70, planned: 70, budget: 0 } });
+    expect(rows.map((r) => [r.product.id, r.risk])).toEqual([["D", "overstock"]]);
   });
 });

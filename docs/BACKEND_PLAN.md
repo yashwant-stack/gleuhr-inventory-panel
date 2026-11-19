@@ -141,9 +141,9 @@ Changing `PANEL_ACCESS_KEY` and republishing locks out everyone holding the old 
 
 ## 3 · Not built yet (next stage)
 
-- **Personal logins with roles** (CBO admin; MD and Herman view; MH, SH, the online team and Manisha plan). Until then, everyone with the key sees the same panel, and the "Viewing as" switch is a preview of each role, not security.
+- **Personal logins with roles** (Management admin; Marketing and the Sales head plan; Purchase and the Supply chain head view; decided 19 Nov 2026). Until then, everyone with the key sees the same panel, and the "Viewing as" switch is a preview of each role, not security.
 - **Saving for everyone.** Approvals, plan submissions, settings and lead times still save **in each person's browser only**, and the screens say so. Their tables already exist (`indent_approvals`, `plan_submissions`, `settings`), waiting for logins so each save records who made it.
-- **Email and WhatsApp sending** (alerts to the CBO, the 23rd/25th and Thursday plan requests, the consolidated report) and **personal plan links**. Every send will be logged in `notifications_log`.
+- **Email and WhatsApp sending** (alerts to Management, the 23rd/25th and Thursday plan requests, the consolidated report) and **personal plan links**. Every send will be logged in `notifications_log`.
 - **File attachments** on plans (needs file storage).
 - **Amazon and Flipkart:** first, how those orders are recorded.
 
@@ -158,7 +158,7 @@ Changing `PANEL_ACCESS_KEY` and republishing locks out everyone holding the old 
 
 ## 5 · Still to confirm with the business
 
-- **23rd vs 25th:** the panel assumes the 23rd = the request email with links, the 25th = the deadline (submitted plans emailed to the CBO, MD and Herman), and the 26th = the consolidated report.
-- **Contact details:** the real email addresses and the CBO's WhatsApp number (Settings holds placeholders).
+- **23rd vs 25th:** the panel assumes the 23rd = the request email with links, the 25th = the deadline (submitted plans emailed to Management), and the 26th = the consolidated report.
+- **Contact details:** the real email addresses and Management's WhatsApp number (Settings holds placeholders).
 - **Lead times and pack sizes:** the vendor lead times and pack sizes per product. Zoho has no lead time, so every vendor starts at 15 days (a setting).
 - **Amazon and Flipkart:** how they are recorded, and what the two darkstores are used for.

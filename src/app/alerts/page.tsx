@@ -39,18 +39,19 @@ interface Planned {
 }
 
 function schedulePlan(today: string, s: Schedule, r: Recipients): Planned[] {
-  const cboOnly = "—";
+  const none = "—";
+  const stockCc = "Purchase, Supply chain head";
   return [
-    { name: "Stock alert", when: `Daily ${s.dailyAlertTime}`, next: today, to: `CBO (${r.cbo})`, cc: cboOnly, channel: "Email + WhatsApp", content: "Critical / low / overstock with order quantities" },
-    { name: "Critical alert", when: "Instantly after a data sync (max once per product per day)", next: "when it happens", to: "CBO", cc: cboOnly, channel: "Email + WhatsApp", content: "A product will run out before new stock can arrive" },
-    { name: "Auto-indent plan", when: `Daily with the stock alert; full plan every Monday`, next: nextWeekday(today, "Monday"), to: "CBO", cc: cboOnly, channel: "Email", content: "What to order, quantities, vendors, value, approve link" },
-    { name: "Sales summary", when: "Every Monday", next: nextWeekday(today, "Monday"), to: "CBO", cc: cboOnly, channel: "Email", content: "Overall sales 7/15/30 days: website / online / clinic" },
-    { name: "Monthly plan request", when: `${ordinal(s.monthlyRequestDay)}, ${s.requestTime}`, next: nextMonthDay(today, s.monthlyRequestDay), to: "Marketing Head, Sales Head, Online team, Manisha", cc: "CBO, MD, Herman", channel: "Email", content: "Personal upload link, next 30 days, trend pre-filled" },
-    { name: "Monthly deadline", when: `${ordinal(s.monthlyDueDay)}`, next: nextMonthDay(today, s.monthlyDueDay), to: "Marketing Head, Sales Head", cc: "CBO, MD, Herman", channel: "Email", content: "Submitted plans auto-emailed; anyone pending gets a final reminder" },
-    { name: "Monthly consolidated report", when: `${ordinal(s.monthlyReportDay)}`, next: nextMonthDay(today, s.monthlyReportDay), to: "CBO", cc: cboOnly, channel: "Email + PDF", content: "System projection + current trend + team plans" },
-    { name: "Weekly plan request", when: `Every ${s.weeklyRequestDay}, ${s.requestTime}`, next: nextWeekday(today, s.weeklyRequestDay, false), to: "Marketing Head, Sales Head, Online team, Manisha", cc: "CBO", channel: "Email", content: `Upload link, next 7 days; due ${s.weeklyDueDay}` },
-    { name: "Weekly reminder", when: `${s.weeklyDueDay} ${s.requestTime}, only if pending`, next: nextWeekday(today, s.weeklyDueDay), to: "Whoever is pending", cc: "CBO", channel: "Email", content: "“Your weekly plan is due today”" },
-    { name: "Weekly consolidated report", when: `Every ${s.weeklyReportDay}, ${s.dailyAlertTime}`, next: nextWeekday(today, s.weeklyReportDay, false), to: "CBO", cc: cboOnly, channel: "Email + PDF", content: "Weekly plans + projection + current trend" },
+    { name: "Stock alert", when: `Daily ${s.dailyAlertTime}`, next: today, to: `Management (${r.management})`, cc: stockCc, channel: "Email + WhatsApp", content: "Critical / low / overstock with order quantities" },
+    { name: "Critical alert", when: "Instantly after a data sync (max once per product per day)", next: "when it happens", to: "Management", cc: stockCc, channel: "Email + WhatsApp", content: "A product will run out before new stock can arrive" },
+    { name: "Auto-indent plan", when: `Daily with the stock alert; full plan every Monday`, next: nextWeekday(today, "Monday"), to: "Management", cc: "Purchase", channel: "Email", content: "What to order, quantities, vendors, value, approve link" },
+    { name: "Sales summary", when: "Every Monday", next: nextWeekday(today, "Monday"), to: "Management", cc: none, channel: "Email", content: "Overall sales 7/15/30 days: website / online / clinic" },
+    { name: "Monthly plan request", when: `${ordinal(s.monthlyRequestDay)}, ${s.requestTime}`, next: nextMonthDay(today, s.monthlyRequestDay), to: "Marketing, Sales head", cc: "Management", channel: "Email", content: "Personal upload link, next 30 days, trend pre-filled" },
+    { name: "Monthly deadline", when: `${ordinal(s.monthlyDueDay)}`, next: nextMonthDay(today, s.monthlyDueDay), to: "Marketing, Sales head", cc: "Management", channel: "Email", content: "Submitted plans auto-emailed; anyone pending gets a final reminder" },
+    { name: "Monthly consolidated report", when: `${ordinal(s.monthlyReportDay)}`, next: nextMonthDay(today, s.monthlyReportDay), to: "Management", cc: none, channel: "Email + PDF", content: "System projection + current trend + team plans" },
+    { name: "Weekly plan request", when: `Every ${s.weeklyRequestDay}, ${s.requestTime}`, next: nextWeekday(today, s.weeklyRequestDay, false), to: "Marketing, Sales head", cc: "Management", channel: "Email", content: `Upload link, next 7 days; due ${s.weeklyDueDay}` },
+    { name: "Weekly reminder", when: `${s.weeklyDueDay} ${s.requestTime}, only if pending`, next: nextWeekday(today, s.weeklyDueDay), to: "Whoever is pending", cc: "Management", channel: "Email", content: "“Your weekly plan is due today”" },
+    { name: "Weekly consolidated report", when: `Every ${s.weeklyReportDay}, ${s.dailyAlertTime}`, next: nextWeekday(today, s.weeklyReportDay, false), to: "Management", cc: none, channel: "Email + PDF", content: "Weekly plans + projection + current trend" },
   ];
 }
 
@@ -70,15 +71,15 @@ function sampleLog(today: string, critical: number, low: number, over: number): 
     const day = addDays(today, -i);
     const c = Math.max(1, critical - (i % 3 === 0 ? 1 : 0));
     const l = low + (i % 4 === 1 ? 1 : 0);
-    rows.push({ day, time: "09:00", type: "Stock alert", channel: "WhatsApp", to: "CBO", status: i === 0 ? "Delivered" : "Read", summary: `${c} critical · ${l} low · ${over} overstock` });
-    rows.push({ day, time: "09:00", type: "Stock alert", channel: "Email", to: "CBO", status: i === 0 ? "Delivered" : "Opened", summary: `Full list + Excel attached` });
-    if (i === 2 || i === 6) rows.push({ day, time: i === 2 ? "13:04" : "16:41", type: "Critical alert", channel: "WhatsApp", to: "CBO", status: "Read", summary: i === 2 ? "UV Armour Sunscreen runs out in 6 days (lead time 15)" : "Collagen Cream runs out in 15 days (lead time 15)" });
+    rows.push({ day, time: "09:00", type: "Stock alert", channel: "WhatsApp", to: "Management", status: i === 0 ? "Delivered" : "Read", summary: `${c} critical · ${l} low · ${over} overstock` });
+    rows.push({ day, time: "09:00", type: "Stock alert", channel: "Email", to: "Management", status: i === 0 ? "Delivered" : "Opened", summary: `Full list + Excel attached` });
+    if (i === 2 || i === 6) rows.push({ day, time: i === 2 ? "13:04" : "16:41", type: "Critical alert", channel: "WhatsApp", to: "Management", status: "Read", summary: i === 2 ? "UV Armour Sunscreen runs out in 6 days (lead time 15)" : "Collagen Cream runs out in 15 days (lead time 15)" });
     const wd = fmtWeekday(day);
-    if (wd === "Thu") rows.push({ day, time: "10:00", type: "Weekly plan request", channel: "Email", to: "MH, SH, Online team, Manisha", status: "Delivered", summary: "Week of 16 Nov · due Sat 14 Nov · cc CBO" });
-    if (wd === "Sat" && i === 0) rows.push({ day, time: "10:00", type: "Weekly reminder", channel: "Email", to: "Sales Head, Manisha", status: "Delivered", summary: "Weekly plan due today · cc CBO" });
+    if (wd === "Thu") rows.push({ day, time: "10:00", type: "Weekly plan request", channel: "Email", to: "Marketing, Sales head", status: "Delivered", summary: "Week of 16 Nov · due Sat 14 Nov · cc Management" });
+    if (wd === "Sat" && i === 0) rows.push({ day, time: "10:00", type: "Weekly reminder", channel: "Email", to: "Sales head", status: "Delivered", summary: "Weekly plan due today · cc Management" });
     if (wd === "Mon") {
-      rows.push({ day, time: "09:00", type: "Weekly consolidated report", channel: "Email", to: "CBO", status: "Opened", summary: "Week of 9 Nov · PDF attached" });
-      rows.push({ day, time: "09:00", type: "Auto-indent plan", channel: "Email", to: "CBO", status: "Opened", summary: "Full weekly indent" });
+      rows.push({ day, time: "09:00", type: "Weekly consolidated report", channel: "Email", to: "Management", status: "Opened", summary: "Week of 9 Nov · PDF attached" });
+      rows.push({ day, time: "09:00", type: "Auto-indent plan", channel: "Email", to: "Management", status: "Opened", summary: "Full weekly indent" });
     }
   }
   return rows.sort((a, b) => (b.day + b.time).localeCompare(a.day + a.time));
@@ -105,7 +106,7 @@ export default function AlertsPage() {
     <div>
       <PageHeader
         title="Alerts"
-        sub="Every automatic email and WhatsApp message: what goes out, when, and to whom. All of them go to, or copy, the CBO."
+        sub="Every automatic email and WhatsApp message: what goes out, when, and to whom. All of them go to, or copy, Management."
         right={
           <Button icon={<Send size={14} />} disabled disabledReason="Sending a test works once email and WhatsApp are connected (backend stage).">
             Send a test to me
@@ -117,7 +118,7 @@ export default function AlertsPage() {
         <Card className="xl:col-span-2">
           <CardHeader
             title={`Today’s stock alert · ${fmtDay(ds.today)}, ${schedule.dailyAlertTime}`}
-            sub="Built from today’s numbers. This is exactly what the CBO receives."
+            sub="Built from today’s numbers. This is exactly what Management receives."
             right={<Segmented value={preview} onChange={setPreview} label="Preview" options={[{ value: "whatsapp", label: "WhatsApp" }, { value: "email", label: "Email" }]} />}
           />
           {preview === "whatsapp" ? (
@@ -139,7 +140,7 @@ export default function AlertsPage() {
             <div className="rounded-xl border border-line text-[13px]">
               <div className="space-y-0.5 border-b border-line bg-sunken px-3 py-2 text-[12.5px]">
                 <div>
-                  <span className="text-muted">To:</span> {recipients.cbo}
+                  <span className="text-muted">To:</span> {recipients.management}
                 </div>
                 <div>
                   <span className="text-muted">Subject:</span> <b>Stock alert {fmtDay(ds.today)}: {critical.length} critical, {low.length} low, {over.length} overstock</b>

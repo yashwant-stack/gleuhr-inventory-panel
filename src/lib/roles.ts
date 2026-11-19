@@ -1,9 +1,10 @@
 // Who is using the panel. Until login exists (backend stage), a "Viewing as" switch in the
 // top bar lets you see the panel the way each person will see it.
 
-export type RoleId = "cbo" | "md" | "herman" | "mh" | "sh" | "online" | "manisha";
+export type RoleId = "management" | "marketing" | "sales" | "purchase" | "supply";
 export type Access = "admin" | "viewer" | "planner";
-export type PlanPart = "marketing" | "sales" | "d2c" | "clinic";
+/** The plans submitted each cycle (19 Nov 2026: the clinic plan merged into the sales plan; the D2C plan retired). */
+export type PlanPart = "marketing" | "sales";
 
 export interface Role {
   id: RoleId;
@@ -14,26 +15,38 @@ export interface Role {
   planPart?: PlanPart;
 }
 
+/** The five roles (decided 19 Nov 2026). Management replaces the CBO, the MD and Herman. */
 export const ROLES: Role[] = [
-  { id: "cbo", person: "CBO", title: "Chief Business Officer · Admin", access: "admin" },
-  { id: "md", person: "MD", title: "Managing Director · Viewer", access: "viewer" },
-  { id: "herman", person: "Herman", title: "Viewer", access: "viewer" },
-  { id: "mh", person: "Marketing Head", title: "Planner · marketing plan", access: "planner", planPart: "marketing" },
-  { id: "sh", person: "Sales Head", title: "Planner · sales plan", access: "planner", planPart: "sales" },
-  { id: "online", person: "Online product team", title: "Planner · D2C projection", access: "planner", planPart: "d2c" },
-  { id: "manisha", person: "Manisha", title: "Planner · clinic projection", access: "planner", planPart: "clinic" },
+  { id: "management", person: "Management", title: "MD and leadership · approves orders, changes settings", access: "admin" },
+  { id: "marketing", person: "Marketing", title: "Marketing head · the marketing plan", access: "planner", planPart: "marketing" },
+  { id: "sales", person: "Sales head", title: "The sales plan, clinic by clinic", access: "planner", planPart: "sales" },
+  { id: "purchase", person: "Purchase", title: "Purchase orders · sees every page, changes nothing", access: "viewer" },
+  { id: "supply", person: "Supply chain head", title: "Stock and transfers · sees every page, changes nothing", access: "viewer" },
 ];
 
-export function roleById(id: RoleId): Role {
-  return ROLES.find((r) => r.id === id) ?? ROLES[0]!;
+/** Roles saved in a browser before 19 Nov 2026, and the role each one is now. */
+export const LEGACY_ROLES: Record<string, RoleId> = {
+  cbo: "management",
+  md: "management",
+  herman: "management",
+  online: "management",
+  mh: "marketing",
+  sh: "sales",
+  manisha: "sales",
+};
+
+export function roleById(id: RoleId | string): Role {
+  const real = (LEGACY_ROLES[id] ?? id) as RoleId;
+  return ROLES.find((r) => r.id === real) ?? ROLES[0]!;
 }
 
 export const PLAN_PARTS: { id: PlanPart; label: string; owner: RoleId; description: string }[] = [
-  { id: "marketing", label: "Marketing plan", owner: "mh", description: "Campaigns, offers and budget; expected units by channel" },
-  { id: "sales", label: "Sales plan", owner: "sh", description: "Sales targets by channel and the actions behind them" },
-  { id: "d2c", label: "D2C projection", owner: "online", description: "Amazon, Flipkart, Shopify and online team: review and adjust" },
-  { id: "clinic", label: "Clinic projection", owner: "manisha", description: "Clinic-wise projection: review and adjust" },
+  { id: "marketing", label: "Marketing plan", owner: "marketing", description: "Campaigns, offers and ad budget; expected units product by product" },
+  { id: "sales", label: "Sales plan", owner: "sales", description: "Sales targets by channel, clinic by clinic, and the actions behind them" },
 ];
+
+/** Parts that are locked once submitted, after the planner confirms the stock risks and the MD's approval. */
+export const CONSENT_PARTS: PlanPart[] = ["marketing"];
 
 /** Pages each access level can open. */
 export const PAGE_ACCESS: Record<string, Access[]> = {

@@ -25,7 +25,7 @@ import { Tooltips } from "./Tooltips";
 import { useDataset, useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
 import { cycleState } from "@/lib/data/plans";
 import { CYCLES } from "@/lib/mock/plans";
-import { canOpen, ROLES, type RoleId } from "@/lib/roles";
+import { canOpen, PLAN_PARTS, ROLES, type RoleId } from "@/lib/roles";
 import { usePanel } from "@/lib/state/store";
 import { ProductDrawer } from "./ProductDrawer";
 import { Select } from "./Select";
@@ -59,7 +59,7 @@ function useBadges(): Record<string, number> {
     let pending = 0;
     for (const c of CYCLES) {
       if (cycleState(c, ds.today) !== "open") continue;
-      for (const part of ["marketing", "sales", "d2c", "clinic"]) if (!subs[`${c.id}:${part}`]) pending++;
+      for (const part of PLAN_PARTS) if (!subs[`${c.id}:${part.id}`]) pending++;
     }
     const h = ds.health;
     const issues = h.unmappedClinics.length + h.unreadableLocations.length + h.failedPushes.filter((f) => f.failed > 0).length + ds.channels.filter((c) => !c.connected).length;
@@ -222,7 +222,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <div className="mx-auto mt-16 max-w-md rounded-xl border border-line bg-surface p-6 text-center">
               <Lock className="mx-auto mb-2 text-muted" aria-hidden />
               <div className="text-[15px] font-semibold">{role.person} can’t open this page</div>
-              <p className="mt-1 text-[13px] text-ink-2">Planners see trends, stock health and their own plan. Switch “Viewing as” in the top bar to see it as the CBO.</p>
+              <p className="mt-1 text-[13px] text-ink-2">Planners see trends, stock health and their own plan. Switch “Viewing as” in the top bar to see it as Management.</p>
               <Link href="/" className="mt-3 inline-block rounded-lg bg-coral px-3 py-1.5 text-[13px] font-medium text-white">
                 Go to Home
               </Link>

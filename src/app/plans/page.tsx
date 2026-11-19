@@ -35,7 +35,7 @@ export default function PlansPage() {
     <div>
       <PageHeader
         title="Plans"
-        sub={`Monthly: request on the ${ordinal(schedule.monthlyRequestDay)}, due the ${ordinal(schedule.monthlyDueDay)}, consolidated report on the ${ordinal(schedule.monthlyReportDay)}. Weekly: request ${schedule.weeklyRequestDay}, due ${schedule.weeklyDueDay}, report ${schedule.weeklyReportDay}. Every email copies the CBO; monthly ones also copy the MD and Herman.`}
+        sub={`Monthly: request on the ${ordinal(schedule.monthlyRequestDay)}, due the ${ordinal(schedule.monthlyDueDay)}, consolidated report on the ${ordinal(schedule.monthlyReportDay)}. Weekly: request ${schedule.weeklyRequestDay}, due ${schedule.weeklyDueDay}, report ${schedule.weeklyReportDay}. Every email copies Management.`}
       />
 
       {role.planPart ? (
@@ -89,7 +89,7 @@ export default function PlansPage() {
                   ))}
                 </div>
                 <span className="text-[12px] text-ink-2">
-                  {done} of 4 in
+                  {done} of {PLAN_PARTS.length} in
                 </span>
               </div>
             </button>
@@ -102,7 +102,7 @@ export default function PlansPage() {
           <CardHeader
             className="mb-0"
             title={`${cycle.label} · who has submitted`}
-            sub={`Request ${fmtDay(cycle.requestOn)} · deadline ${fmtDay(cycle.dueOn)} · consolidated report to CBO ${fmtDay(cycle.reportOn)}`}
+            sub={`Request ${fmtDay(cycle.requestOn)} · deadline ${fmtDay(cycle.dueOn)} · consolidated report to Management ${fmtDay(cycle.reportOn)}`}
           />
         </div>
         {state === "upcoming" ? (
@@ -144,13 +144,13 @@ export default function PlansPage() {
                     <td>
                       <SubmissionChip status={st} />
                     </td>
-                    <td className="whitespace-nowrap text-ink-2">{s ? `${IST_TIME.format(new Date(s.submittedAt))}${s.version > 1 ? ` · v${s.version}` : ""}` : "—"}</td>
+                    <td className="whitespace-nowrap text-ink-2">{s ? `${IST_TIME.format(new Date(s.submittedAt))}${s.version > 1 ? ` · v${s.version}` : ""}${s.locked ? " · locked" : ""}` : "—"}</td>
                     <td className="num">{planned !== null ? fmtInt(planned) : "—"}</td>
                     <td className="num">{system !== null ? fmtInt(system) : "—"}</td>
                     <td className="num">{g !== null ? <span className={Math.abs(g) > gapFlag ? "font-semibold text-st-low" : ""}>{fmtPct(g, true)}</span> : "—"}</td>
                     <td className="text-right">
                       <Link href={`/plans/form?cycle=${cycle.id}&part=${p.id}`} className={clsx("rounded-lg px-2.5 py-1 text-[12.5px] font-medium whitespace-nowrap", mine && state === "open" ? "bg-coral text-white" : "border border-line-strong hover:bg-sunken")}>
-                        {mine && state === "open" ? (s ? "Edit my plan" : "Fill my plan") : s ? "View" : "Preview form"}
+                        {mine && state === "open" ? (s ? (s.locked ? "View (locked)" : "Edit my plan") : "Fill my plan") : s ? "View" : "Preview form"}
                       </Link>
                     </td>
                   </tr>

@@ -267,7 +267,7 @@ export default function IndentPage() {
                 icon={<Check size={14} />}
                 onClick={doApprove}
                 disabled={!isAdmin || selected.size === 0}
-                disabledReason={!isAdmin ? `Only the CBO can approve the indent (viewing as ${role.person})` : "Tick the lines to approve first"}
+                disabledReason={!isAdmin ? `Only Management can approve the indent (viewing as ${role.person})` : "Tick the lines to approve first"}
               >
                 Approve selected ({selected.size})
               </Button>

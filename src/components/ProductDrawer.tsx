@@ -272,7 +272,7 @@ export function ProductDrawer() {
                   toast("Lead time saved in this browser only. Saving it for everyone comes with personal logins.");
                 }}
                 disabled={role.access !== "admin"}
-                disabledReason="Only an admin (CBO) can change lead times"
+                disabledReason="Only Management can change lead times"
                 options={[
                   { value: "vendor", label: `Vendor default (${ds.vendors.find((v) => v.id === p.vendorId)?.leadTimeDays ?? "—"} days)` },
                   ...[7, 15, 30, 45, 60, 90].map((d) => ({ value: String(d), label: `${d} days` })),
