@@ -40,9 +40,23 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   ok((await clinicBoxes.count()) >= 10, 'sales plan: Clinics opens clinic by clinic (the clinic plan merged in)');
   await p.screenshot({ path: OUT + '/planform.png', fullPage: true });
   await p.getByRole('button', { name: 'Submit plan' }).click();
+  {
+    const dlg = p.getByRole('dialog', { name: 'Check the stock before you submit' });
+    await dlg.waitFor();
+    const t = await dlg.innerText();
+    ok(t.includes('Targets should not count on stock') && !t.includes('ad budget'), 'sales plan: the same popup, about targets (no ad budgets)');
+    ok(await dlg.getByRole('button', { name: 'Submit and lock' }).isDisabled(), 'sales plan: Submit and lock is off until the boxes are ticked');
+    const risks = dlg.getByLabel(/I have checked the stock warnings/);
+    if (await risks.count()) await risks.check();
+    await dlg.getByLabel('This plan was discussed with and approved by the MD.').check();
+    await dlg.getByRole('button', { name: 'Submit and lock' }).click();
+  }
   await p.waitForURL(/\/plans$/);
   const row = p.locator('tr', { hasText: 'Sales plan' });
-  ok((await row.innerText()).includes('Submitted on time'), 'plans: Sales plan now shows Submitted on time');
+  ok((await row.innerText()).includes('Submitted on time') && (await row.innerText()).includes('locked'), 'plans: Sales plan shows Submitted on time, locked');
+  await p.getByRole('link', { name: 'View (locked)' }).click();
+  await p.waitForURL(/plans\/form/);
+  ok(await p.getByLabel(/Expected units for Online team/).isDisabled(), 'sales plan: locked after submitting, cannot be edited');
   await p.screenshot({ path: OUT + '/plans.png', fullPage: true });
 
   // 3. Planner cannot open Auto indent

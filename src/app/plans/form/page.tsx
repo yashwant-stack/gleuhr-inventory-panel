@@ -132,7 +132,19 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
   // the plan's stock check: every product, all channels of the plan together
   const totals = useMemo(() => {
     const t: Record<string, ProductPlanTotal> = {};
-    if (!productWise) return t;
+    if (!productWise) {
+      // a plan by channel (the sales plan): each product sold in a channel moves with that channel's change
+      for (const b of baseline) {
+        const n = num(b.key);
+        const factor = !Number.isNaN(n) && b.systemUnits > 0 ? n / b.systemUnits : 1;
+        for (const x of b.products) {
+          const cur = (t[x.productId] ??= { system: 0, planned: 0, budget: 0 });
+          cur.system += x.systemUnits;
+          cur.planned += x.systemUnits * factor;
+        }
+      }
+      return t;
+    }
     for (const b of baseline) {
       for (const x of b.products) {
         const cur = (t[x.productId] ??= { system: 0, planned: 0, budget: 0 });
@@ -144,8 +156,9 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
       }
     }
     return t;
-  }, [baseline, draft.products, draft.productBudget, productWise]);
-  const check = useMemo(() => (cycle && productWise ? planStockCheck(ds, metrics, cycle, totals) : []), [ds, metrics, cycle, totals, productWise]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- num() reads draft.planned / draft.clinics, listed below
+  }, [baseline, draft.products, draft.productBudget, draft.planned, draft.clinics, productWise]);
+  const check = useMemo(() => (cycle ? planStockCheck(ds, metrics, cycle, totals) : []), [ds, metrics, cycle, totals]);
   const checkById = useMemo(() => new Map(check.map((r) => [r.product.id, r])), [check]);
 
   if (!cycle || !meta) {
@@ -500,7 +513,7 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
         </div>
       </Card>
 
-      {productWise ? <StockCheck rows={check} cycleLabel={fmtRange(cycle.periodFrom, cycle.periodTo)} /> : null}
+      <StockCheck rows={check} cycleLabel={fmtRange(cycle.periodFrom, cycle.periodTo)} withBudget={showBudget} />
 
       <Card className="mt-3">
         <label className="block text-[12.5px] font-semibold text-ink-2">
@@ -528,7 +541,7 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
         {canSubmit ? (
           <p className="mt-2 text-right text-[11.5px] text-muted">
             {needsConsent
-              ? "Before it is sent you confirm the stock warnings and the MD’s approval. A submitted marketing plan is locked: it can’t be edited."
+              ? `Before it is sent you confirm the stock warnings and the MD’s approval. A submitted ${meta.label.toLowerCase()} is locked: it can’t be edited.`
               : existing
                 ? "A new submission is saved as a new version; the earlier one is kept."
                 : ""}
@@ -538,6 +551,7 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
 
       {consentOpen ? (
         <ConsentDialog
+          withBudget={showBudget}
           atRisk={atRisk}
           overstock={overNotPushed}
           tight={check.filter((r) => r.risk === "tight" && !r.etaOnOrder && r.planned > 0)}
@@ -567,7 +581,7 @@ const RISK_CHIP: Record<StockCheckRow["risk"], { label: string; cls: string }> =
 };
 
 /** C · days of stock left at the plan's pace and when new stock lands, for every product the plan touches. */
-function StockCheck({ rows, cycleLabel }: { rows: StockCheckRow[]; cycleLabel: string }) {
+function StockCheck({ rows, cycleLabel, withBudget }: { rows: StockCheckRow[]; cycleLabel: string; withBudget: boolean }) {
   const metrics = useMetrics();
   const lead = new Map(metrics.map((m) => [m.product.id, m.leadTime]));
   const [showAll, setShowAll] = useState(false);
@@ -577,7 +591,7 @@ function StockCheck({ rows, cycleLabel }: { rows: StockCheckRow[]; cycleLabel: s
     <Card className="mt-3">
       <CardHeader
         title="C · Stock check for this plan"
-        sub={`How many days the stock lasts at your plan’s pace (today’s pace until ${cycleLabel} starts), and when new stock can arrive. “At risk” = it runs out during the plan before new stock can land: an ad on it may sell stock you don’t have.`}
+        sub={`How many days the stock lasts at your plan’s pace (today’s pace until ${cycleLabel} starts), and when new stock can arrive. “At risk” = it runs out during the plan before new stock can land: ${withBudget ? "an ad on it may sell stock you don’t have" : "the plan counts on stock you don’t have"}.${withBudget ? "" : " Each product moves with its channel’s change in your plan."}`}
       />
       {shown.length === 0 ? (
         <p className="py-2 text-[13px] text-ink-2">Every product in the plan has enough stock for the plan period.</p>
@@ -592,7 +606,7 @@ function StockCheck({ rows, cycleLabel }: { rows: StockCheckRow[]; cycleLabel: s
                 <th className="num">Days of stock left</th>
                 <th>Runs out</th>
                 <th>New stock arrives</th>
-                <th className="num">Ad budget (₹)</th>
+                {withBudget ? <th className="num">Ad budget (₹)</th> : null}
                 <th>Check</th>
               </tr>
             </thead>
@@ -601,11 +615,11 @@ function StockCheck({ rows, cycleLabel }: { rows: StockCheckRow[]; cycleLabel: s
                 <tr key={r.product.id} className={clsx(r.risk === "at_risk" && "bg-st-critical-soft/40")}>
                   <td className="max-w-[240px] truncate font-medium">{r.product.name}</td>
                   <td className="num">{fmtInt(r.stock)}</td>
-                  <td className="num">{fmtInt(r.planned)}</td>
+                  <td className="num">{fmtInt(Math.round(r.planned))}</td>
                   <td className="num font-semibold">{daysLeftText(r)}</td>
                   <td className="whitespace-nowrap">{r.runOut ? fmtDay(r.runOut) : "—"}</td>
                   <td className="whitespace-nowrap text-ink-2">{etaText(r, lead.get(r.product.id))}</td>
-                  <td className="num">{r.budget ? fmtInt(r.budget) : "—"}</td>
+                  {withBudget ? <td className="num">{r.budget ? fmtInt(r.budget) : "—"}</td> : null}
                   <td>
                     {r.risk === "tight" && r.etaOnOrder ? (
                       <span className="rounded-full bg-st-healthy-soft px-2 py-0.5 text-[11.5px] font-semibold whitespace-nowrap text-st-healthy">Covered by an order</span>
@@ -628,8 +642,9 @@ function StockCheck({ rows, cycleLabel }: { rows: StockCheckRow[]; cycleLabel: s
   );
 }
 
-/** The popup before a marketing plan is sent: stock warnings, the MD's approval, then the plan is locked. */
+/** The popup before a plan is sent: stock warnings, the MD's approval, then the plan is locked. */
 function ConsentDialog({
+  withBudget,
   atRisk,
   overstock,
   tight,
@@ -637,6 +652,7 @@ function ConsentDialog({
   onCancel,
   onConfirm,
 }: {
+  withBudget: boolean;
   atRisk: StockCheckRow[];
   overstock: StockCheckRow[];
   tight: StockCheckRow[];
@@ -664,7 +680,9 @@ function ConsentDialog({
         <h2 id="consent-title" className="text-[18px] font-bold">
           Check the stock before you submit
         </h2>
-        <p className="mt-1 text-[13px] text-ink-2">Ads should not sell stock we don’t have, and overstock should not be left unpushed. Check these, then confirm.</p>
+        <p className="mt-1 text-[13px] text-ink-2">
+          {withBudget ? "Ads should not sell stock we don’t have" : "Targets should not count on stock we don’t have"}, and overstock should not be left unpushed. Check these, then confirm.
+        </p>
 
         <div className="mt-3 max-h-[52vh] space-y-3 overflow-y-auto pr-1 scroll-thin">
           {atRisk.length ? (
@@ -672,19 +690,21 @@ function ConsentDialog({
               <div className="flex flex-wrap items-center gap-2">
                 <AlertTriangle size={16} className="text-st-critical" aria-hidden />
                 <h3 className="text-[14px] font-semibold text-st-critical">Stock at risk: {atRisk.length} product{atRisk.length === 1 ? "" : "s"} may run out during the plan</h3>
-                {riskBudget > 0 ? (
+                {withBudget && riskBudget > 0 ? (
                   <button type="button" onClick={onDropBudgets} className="ml-auto rounded-md border border-st-critical/40 bg-surface px-2 py-1 text-[12px] font-medium text-st-critical hover:bg-st-critical-soft">
                     Take the ad budget off these ({fmtMoney(riskBudget)})
                   </button>
                 ) : null}
               </div>
-              <p className="mt-1 text-[12.5px] text-ink-2">Would you still like to continue with the budget allotted to these products? New stock lands after they run out.</p>
+              <p className="mt-1 text-[12.5px] text-ink-2">
+                {withBudget ? "Would you still like to continue with the budget allotted to these products?" : "Would you still like to continue with these targets?"} New stock lands after they run out.
+              </p>
               <ul className="mt-2 space-y-1.5 text-[13px]">
                 {atRisk.map((r) => (
                   <li key={r.product.id} className="rounded-lg bg-surface px-3 py-2">
                     <div className="flex flex-wrap justify-between gap-2">
                       <b>{r.product.name}</b>
-                      <span className="tabular">{r.budget ? `ad budget ${fmtMoney(r.budget)}` : "no ad budget"}</span>
+                      {withBudget ? <span className="tabular">{r.budget ? `ad budget ${fmtMoney(r.budget)}` : "no ad budget"}</span> : <span className="tabular">plan {fmtInt(Math.round(r.planned))} units</span>}
                     </div>
                     <div className="text-[12.5px] text-ink-2">
                       {fmtInt(r.stock)} in stock · lasts {daysLeftText(r)} at your plan (runs out {r.runOut ? fmtDay(r.runOut) : "—"}) · new stock {etaText(r, lead.get(r.product.id))}
@@ -729,7 +749,7 @@ function ConsentDialog({
           {hasWarnings ? (
             <label className="flex items-start gap-2">
               <input ref={first} type="checkbox" checked={risksOk} onChange={(e) => setRisksOk(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[var(--color-coral)]" />
-              <span>I have checked the stock warnings above and want to continue with this plan and its ad budgets.</span>
+              <span>I have checked the stock warnings above and want to continue with this plan{withBudget ? " and its ad budgets" : ""}.</span>
             </label>
           ) : null}
           <label className="flex items-start gap-2">

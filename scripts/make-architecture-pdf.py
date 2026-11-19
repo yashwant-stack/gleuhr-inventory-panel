@@ -483,7 +483,7 @@ S += bullets([
     "<b>Projection</b> for 7 / 15 / 30 / 60 / 90 days = sells per day × days (an optional trend factor, off by default, can scale it within ±25%).",
     "<b>Channels</b>: each channel's sales, growth and next-30-day forecast. A growth % shows only when the sales points behind it were recording through the whole previous period; otherwise “earlier data incomplete”.",
     "<b>Plans</b>: two plans each week and month: Marketing and the Sales head (the Sales head plans the clinics clinic by clinic; the separate clinic and D2C plans were retired on 19 Nov). A plan more than ±20% away from the system's projection is flagged; Reports lays plans against the projection.",
-    "<b>Marketing plan: stock check, consent and lock</b>: each product has an ad budget; section C shows each product's days of stock left at the plan's pace and when new stock can arrive. Submitting opens a popup listing products at risk of running out (with their ad budget and new-stock date) and overstock the plan does not push; Marketing ticks that the risks were checked and that the plan was discussed with and approved by the MD. The plan is then locked; only Management can reopen it.",
+    "<b>Marketing plan: stock check, consent and lock</b>: each product has an ad budget; section C shows each product's days of stock left at the plan's pace and when new stock can arrive. Submitting opens a popup listing products at risk of running out (with their ad budget and new-stock date) and overstock the plan does not push; Marketing ticks that the risks were checked and that the plan was discussed with and approved by the MD. The plan is then locked; only Management can reopen it. The sales plan gets the same stock check, popup and lock (each product moves with its channel's target; no ad budgets).",
     "<b>Marketing plan, product by product</b>: inside each channel (clinics, online team, website) the Marketing Head sees every product with its stock now, last 30 days and the system's expected units, and types their own expected units. The channel total is the sum of its products, and each product's own plan feeds the stock-shortfall check.",
 ])
 S.append(PageBreak())
@@ -494,7 +494,7 @@ S += [P("9 · Operating flow: who does what", "h1"),
       table([["Who", "Access", "Uses the panel to"],
              ["Management", "Admin: every page; approves; changes settings", "Approve Auto indent lines; set lead times and thresholds; reopen a locked plan; read Reports and Alerts"],
              ["Marketing", "Planner", "Submit the marketing plan product by product, with ad budgets; confirm the stock warnings and the MD's approval"],
-             ["Sales head", "Planner", "Submit the sales plan: each channel, and the clinics clinic by clinic"],
+             ["Sales head", "Planner", "Submit the sales plan: each channel, and the clinics clinic by clinic; confirm the stock warnings and the MD's approval"],
              ["Purchase", "Viewer: every page, no changes", "Follow Auto indent; raise the purchase order in Zoho for approved lines"],
              ["Supply chain head", "Viewer: every page, no changes", "Follow stock health and the transfers between Mohali and the clinics"],
              ["Vercel Cron", "System", "Run the sync every 2 hours and the daily check"]],

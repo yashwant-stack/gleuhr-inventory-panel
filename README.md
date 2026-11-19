@@ -11,7 +11,7 @@ npm install
 npm run dev        # then open http://localhost:3000
 ```
 
-Use **“Viewing as”** in the top bar to see the panel as each person: Management (admin: approves, changes settings), Marketing and Sales head (planners), Purchase and Supply chain head (view only). The marketing plan is planned product by product with ad budgets, checked against stock, confirmed with the MD's approval and then locked; the Sales head plans the clinics clinic by clinic.
+Use **“Viewing as”** in the top bar to see the panel as each person: Management (admin: approves, changes settings), Marketing and Sales head (planners), Purchase and Supply chain head (view only). The marketing plan is planned product by product with ad budgets, checked against stock, confirmed with the MD's approval and then locked; the Sales head plans the clinics clinic by clinic, with the same stock check, consent and lock.
 
 ## The pages
 

@@ -45,8 +45,8 @@ export const PLAN_PARTS: { id: PlanPart; label: string; owner: RoleId; descripti
   { id: "sales", label: "Sales plan", owner: "sales", description: "Sales targets by channel, clinic by clinic, and the actions behind them" },
 ];
 
-/** Parts that are locked once submitted, after the planner confirms the stock risks and the MD's approval. */
-export const CONSENT_PARTS: PlanPart[] = ["marketing"];
+/** Parts that are locked once submitted, after the planner confirms the stock risks and the MD's approval (both, since 19 Nov 2026). */
+export const CONSENT_PARTS: PlanPart[] = ["marketing", "sales"];
 
 /** Pages each access level can open. */
 export const PAGE_ACCESS: Record<string, Access[]> = {

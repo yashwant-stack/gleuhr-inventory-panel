@@ -13,10 +13,10 @@ describe("roles (decided 19 Nov 2026)", () => {
     expect(roleById("mh").person).toBe("Marketing");
     for (const id of Object.values(LEGACY_ROLES)) expect(ROLES.some((r) => r.id === id)).toBe(true);
   });
-  it("two plans: marketing (locked after consent) and sales; each owned by a planner", () => {
+  it("two plans, marketing and sales, each owned by a planner and locked after consent", () => {
     expect(PLAN_PARTS.map((p) => p.id)).toEqual(["marketing", "sales"]);
     for (const p of PLAN_PARTS) expect(roleById(p.owner).planPart).toBe(p.id);
-    expect(CONSENT_PARTS).toEqual(["marketing"]);
+    expect(CONSENT_PARTS).toEqual(["marketing", "sales"]);
   });
   it("only Management changes things; Purchase and Supply chain see every page; planners don't see Auto indent", () => {
     expect(roleById("management").access).toBe("admin");

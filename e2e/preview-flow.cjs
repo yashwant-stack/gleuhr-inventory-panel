@@ -42,6 +42,17 @@ const HASH = { '/': '', '/sales': 'sales', '/channels': 'channels', '/projection
   const first = p.getByLabel(/Expected units for Online team/);
   await first.fill(String(Math.round(Number(await first.inputValue()) * 1.3)));
   await p.getByRole('button', { name: 'Submit plan' }).click();
+  {
+    const dlg = p.getByRole('dialog', { name: 'Check the stock before you submit' });
+    await dlg.waitFor();
+    const t = await dlg.innerText();
+    ok(t.includes('Targets should not count on stock') && !t.includes('ad budget'), 'sales plan: the same popup, about targets (no ad budgets)');
+    ok(await dlg.getByRole('button', { name: 'Submit and lock' }).isDisabled(), 'sales plan: Submit and lock is off until the boxes are ticked');
+    const risks = dlg.getByLabel(/I have checked the stock warnings/);
+    if (await risks.count()) await risks.check();
+    await dlg.getByLabel('This plan was discussed with and approved by the MD.').check();
+    await dlg.getByRole('button', { name: 'Submit and lock' }).click();
+  }
   await p.waitForTimeout(400);
   ok(p.url().endsWith('#plans') && (await p.locator('tr', { hasText: 'Sales plan' }).innerText()).includes('Submitted on time'), 'plan submitted, back on #plans');
 
