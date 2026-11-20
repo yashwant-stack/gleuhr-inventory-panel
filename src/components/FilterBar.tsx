@@ -4,7 +4,7 @@ import { RotateCcw, Search } from "lucide-react";
 import type { ReactNode } from "react";
 import { useDataset } from "@/lib/data/hooks";
 import { salesPointId } from "@/lib/data/model";
-import type { ChannelId } from "@/lib/domain/types";
+import { SEGMENTS, type ChannelId } from "@/lib/domain/types";
 import { usePanel } from "@/lib/state/store";
 import { DateRange } from "./DateRange";
 import { MultiSelect } from "./Select";
@@ -31,7 +31,8 @@ export function FilterBar({
 }) {
   const s = usePanel();
   const ds = useDataset();
-  const active = s.channels.length + s.points.length + s.locations.length + s.categories.length + (s.search ? 1 : 0) > 0;
+  const purchase = s.role === "purchase";
+  const active = s.channels.length + s.points.length + s.locations.length + s.categories.length + (purchase ? s.segments.length : 0) + (s.search ? 1 : 0) > 0;
   const categoryList = [...new Set(ds.products.map((p) => p.category))].sort();
   const pointOptions: { value: string; label: string; group: string }[] = [];
   for (const src of ds.sources) {
@@ -69,6 +70,9 @@ export function FilterBar({
         />
       ) : null}
       {categories ? <MultiSelect label="Category" values={s.categories} onChange={s.setCategories} options={categoryList.map((c) => ({ value: c, label: c }))} /> : null}
+      {categories && purchase ? (
+        <MultiSelect label="Segment" values={s.segments} onChange={s.setSegments} options={[...SEGMENTS.map((g) => ({ value: g.id as string, label: g.label })), { value: "none", label: "Not set in Zoho" }]} />
+      ) : null}
       {search ? (
         <div className="flex h-8 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-2">
           <Search size={14} className="text-muted" aria-hidden />

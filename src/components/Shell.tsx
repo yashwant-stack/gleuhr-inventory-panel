@@ -10,6 +10,7 @@ import {
   HeartPulse,
   LayoutDashboard,
   Lock,
+  Megaphone,
   Menu,
   Settings,
   ShoppingBag,
@@ -25,7 +26,7 @@ import { Tooltips } from "./Tooltips";
 import { useDataset, useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
 import { cycleState } from "@/lib/data/plans";
 import { CYCLES } from "@/lib/mock/plans";
-import { canOpen, PLAN_PARTS, ROLES, type RoleId } from "@/lib/roles";
+import { canOpen, inNav, PLAN_PARTS, ROLES, type RoleId } from "@/lib/roles";
 import { usePanel } from "@/lib/state/store";
 import { ProductDrawer } from "./ProductDrawer";
 import { Select } from "./Select";
@@ -38,6 +39,7 @@ const NAV = [
   { href: "/projections", label: "Projections", Icon: TrendingUp },
   { href: "/stock", label: "Stock health", Icon: Boxes },
   { href: "/indent", label: "Auto indent", Icon: ClipboardList },
+  { href: "/marketing-impact", label: "Marketing impact", Icon: Megaphone },
   { href: "/plans", label: "Plans", Icon: CalendarCheck },
   { href: "/reports", label: "Reports", Icon: FileBarChart },
   { href: "/alerts", label: "Alerts", Icon: Bell },
@@ -73,8 +75,8 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
   const badges = useBadges();
   return (
     <nav aria-label="Main" className="flex flex-col gap-0.5 p-2">
-      {NAV.map(({ href, label, Icon }) => {
-        const allowed = canOpen(href, role.access);
+      {NAV.filter(({ href }) => inNav(href, role.id)).map(({ href, label, Icon }) => {
+        const allowed = canOpen(href, role.access, role.id);
         const active = href === "/" ? path === "/" : path === href || path.startsWith(href + "/");
         if (!allowed) {
           return (
@@ -180,7 +182,7 @@ export function Shell({ children }: { children: ReactNode }) {
     return <div className="flex min-h-screen items-center justify-center text-[13px] text-muted">Loading the panel…</div>;
   }
 
-  const allowed = canOpen(path, role.access);
+  const allowed = canOpen(path, role.access, role.id);
   return (
     <div className="flex min-h-screen">
       <Tooltips />

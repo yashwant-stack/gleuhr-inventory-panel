@@ -2,7 +2,7 @@
 // Gleuhr online CRM's catalogue fixture; the clinics are the clinic CRM's nine locations.
 // Quantities, vendors, lead times and pack sizes are made up for the demo.
 
-import type { ChannelId, Location, Vendor } from "../domain/types";
+import type { ChannelId, Location, Segment, Vendor } from "../domain/types";
 import type { CrmClinic } from "../data/model";
 
 /** Channel names and colours are fixed; whether a channel is connected comes from the data. */
@@ -88,6 +88,21 @@ export interface CatalogEntry {
   /** Typical units per day across every channel. */
   baseRate: number;
 }
+
+/**
+ * Sample segments (Day Regime / Night Regime / Wellness). In the real panel this comes from a "Segment" custom
+ * field on each Zoho item. A few sample products are left without one, so the "Not set in Zoho" state shows.
+ */
+export const SAMPLE_SEGMENT: Record<string, Segment> = {
+  "GL-FGPLTTE": "day", "GL-BBCREAM": "day", "GL-CLRSOLN": "day", "GL-MOUSCLE": "day", "GL-DAYCREM": "day", "GL-MVTSERM": "day",
+  "GL-PURGELL": "day", "GL-SEASUNS": "day", "GL-TTFACEW": "day", "GL-VITCSRM": "day", "GL-UVARMOR": "day", "GL-HAIRSHM": "day",
+  "GL-AGECMBT": "night", "GL-AGELOCK": "night", "GL-BLMPIGT": "night", "GL-COLCREM": "night", "GL-COLSERM": "night", "GL-EGFSERM": "night",
+  "GL-EYEREVI": "night", "GL-NGTCREM": "night", "GL-PURACNE": "night", "GL-PURSERM": "night", "GL-SPACREM": "night", "GL-HAIROIL": "night",
+  "GL-HAIRSER": "night", "GL-SAQMASK": "night", "GL-MSGCREM": "night",
+  "GL-FLXSEED": "wellness", "GL-HAIRGRO": "wellness", "GL-GLOWFOR": "wellness", "GL-GLUTABT": "wellness", "GL-GLUTCAP": "wellness",
+  "GL-GRAPESD": "wellness", "GL-MAGCIT": "wellness", "GL-PCOS": "wellness", "GL-ROYCHAM": "wellness", "GL-SLMHTEA": "wellness",
+  "GL-THYROID": "wellness", "GL-VITCRH": "wellness", "GL-SKNHTEA": "wellness",
+};
 
 export const CATALOG: CatalogEntry[] = [
   { sku: "GL-FGPLTTE", name: "3 in 1 Face Glow Palette", category: "Makeup", price: 1400, vendorId: "v-e", packSize: 12, baseRate: 1.6 },

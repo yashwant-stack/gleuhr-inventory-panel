@@ -5,20 +5,20 @@ import { useMemo, useState } from "react";
 import { SalesTrendChart } from "@/components/charts";
 import { FilterBar } from "@/components/FilterBar";
 import { Card, CardHeader, ChannelDot, channelLabel, Delta, PageHeader, Segmented, StatTile, StatusChip, Tabs, CHANNEL_COLOR } from "@/components/ui";
-import { CHANNEL_IDS, comparer, dailyTotals, previousRange, projectionValueByChannel, salesByProduct, urgency, type ProductMetrics } from "@/lib/data/engine";
+import { CHANNEL_IDS, comparer, dailyTotals, inventoryValue, previousRange, productMatches, projectionValueByChannel, salesByProduct, urgency, type InventoryValue, type ProductMetrics } from "@/lib/data/engine";
 import { indentQuantity } from "@/lib/domain/formulas";
 import { connectedChannels } from "@/lib/data/model";
 import { useDataset, useFilters, useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
 import { cycleState, submissionStatus } from "@/lib/data/plans";
 import { diffDays, fmtDay, fmtRange } from "@/lib/dates";
-import type { ChannelId } from "@/lib/domain/types";
+import { SEGMENTS, type ChannelId } from "@/lib/domain/types";
 import { fmtDays, fmtInt, fmtMoneyShort, fmtRate, pctChange } from "@/lib/format";
 import { CYCLES } from "@/lib/mock/plans";
 import { PLAN_PARTS, roleById } from "@/lib/roles";
 import { usePanel } from "@/lib/state/store";
 
 type ActionTab = "all" | "critical" | "low" | "overstock";
-const COVER_DAYS = [7, 15, 30, 60, 90];
+const COVER_DAYS = [7, 15, 30, 45, 60, 90];
 
 export default function HomePage() {
   const ds = useDataset();
@@ -31,13 +31,19 @@ export default function HomePage() {
   const [measure, setMeasure] = useState<"value" | "units">("value");
   const [tab, setTab] = useState<ActionTab>("all");
   // starts on the cover days set in Settings (what Auto indent uses), else 30
-  const [cover, setCover] = useState<number>(() => (COVER_DAYS.includes(settings.defaultCoverDays) ? settings.defaultCoverDays : 60));
+  const [cover, setCover] = useState<number>(() => (COVER_DAYS.includes(settings.defaultCoverDays) ? settings.defaultCoverDays : 45));
 
   const channels = (f.channels.length ? f.channels : connectedChannels(ds));
   const sales = useMemo(() => salesByProduct(ds, f), [ds, f]);
   const prev = useMemo(() => salesByProduct(ds, f, previousRange(f.from, f.to)), [ds, f]);
   const cmp = useMemo(() => comparer(ds, f), [ds, f]);
-  const points = useMemo(() => dailyTotals(ds, f), [ds, f]);
+  const purchase = role.id === "purchase";
+  // Purchase's Home (decided 20 Nov 2026): the stock's value replaces the sales-over-time chart
+  const points = useMemo(() => (purchase ? [] : dailyTotals(ds, f)), [ds, f, purchase]);
+  const inv = useMemo(
+    () => (purchase ? inventoryValue(ds, ds.products.filter((p) => productMatches(p, f)), settings.unusedBottleValue ?? 0) : null),
+    [ds, f, purchase, settings.unusedBottleValue],
+  );
   const proj = useMemo(() => [7, 15, 30].map((h) => ({ h, v: projectionValueByChannel(ds, settings, h) })), [ds, settings]);
 
   const total = sales.reduce((a, s) => a + s.value, 0);
@@ -67,7 +73,7 @@ export default function HomePage() {
   };
   const rows = lists[tab];
   const orderFor = (m: ProductMetrics) =>
-    indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: cover, reorderAtDays: settings.reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize }).qty;
+    indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: cover, safetyDays: settings.purchaseSafetyDays, reorderAtDays: settings.reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: m.extraFor(m.leadTime + cover) }).qty;
 
   const weekly = CYCLES.find((c) => c.kind === "weekly" && cycleState(c, ds.today) === "open");
   const nextMonthly = CYCLES.filter((c) => c.kind === "monthly" && cycleState(c, ds.today) === "upcoming").sort((a, b) => a.requestOn.localeCompare(b.requestOn))[0];
@@ -86,14 +92,14 @@ export default function HomePage() {
       </div>
 
       <div className="mt-3 grid gap-3 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
+        {inv ? <InventoryValueCard inv={inv} filtered={f.categories.length + (f.segments?.length ?? 0) + (f.search ? 1 : 0) > 0} /> : <Card className="xl:col-span-2">
           <CardHeader
             title="Sales over time"
             sub={`${fmtRange(f.from, f.to)} · by channel`}
             right={<Segmented value={measure} onChange={setMeasure} label="Measure" options={[{ value: "value", label: "₹ Value" }, { value: "units", label: "Units" }]} />}
           />
           <SalesTrendChart points={points} measure={measure} channels={channels} />
-        </Card>
+        </Card>}
         <Card>
           <CardHeader title="Sales by channel" sub="value, and change vs the previous period" right={<Link href="/channels" className="text-[12.5px] font-medium text-coral hover:underline">Channels →</Link>} />
           <ul className="space-y-3">
@@ -243,5 +249,83 @@ export default function HomePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+const SEGMENT_COLOR: Record<string, string> = { day: "var(--color-seg-day)", night: "var(--color-seg-night)", wellness: "var(--color-seg-wellness)", none: "var(--color-line-strong)" };
+const segmentLabel = (k: string) => SEGMENTS.find((g) => g.id === k)?.label ?? "Not set in Zoho";
+
+/** Purchase's Home: the working capital in stock, where it sits and which segment it is in. */
+function InventoryValueCard({ inv, filtered }: { inv: InventoryValue; filtered: boolean }) {
+  const stockValue = inv.total - inv.bottles;
+  const share = (v: number) => (inv.total ? `${Math.round((v / inv.total) * 100)}%` : "–");
+  const rows: { label: string; value: number | null; note?: string }[] = [
+    { label: "Mohali warehouse", value: inv.byKind.warehouse },
+    { label: `Clinics (${inv.counted.clinic})`, value: inv.byKind.clinic },
+    ...(inv.counted.darkstore || inv.byKind.darkstore ? [{ label: `Darkstores (${inv.counted.darkstore})`, value: inv.byKind.darkstore }] : []),
+    { label: "Unused bottles", value: inv.bottles || null, note: inv.bottles ? "entered in Settings" : "Not entered yet. Management enters it in Settings" },
+  ];
+  const maxSeg = Math.max(1, ...inv.bySegment.map((x) => x.value));
+  return (
+    <Card className="xl:col-span-2">
+      <CardHeader title="Total inventory value" sub={`Working capital sitting in stock today, at purchase cost${filtered ? " · filtered products only" : ""}`} />
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <div className="text-[28px] font-semibold tabular leading-tight">{fmtMoneyShort(inv.total)}</div>
+          <div className="mb-3 text-[12.5px] text-muted">{fmtInt(inv.units)} units in stock</div>
+          <table className="w-full text-[13px]">
+            <tbody className="divide-y divide-line">
+              {rows.map((r) => (
+                <tr key={r.label}>
+                  <td className="py-1.5">
+                    {r.label}
+                    {r.note && r.value === null ? <div className="text-[11.5px] text-muted">{r.note}</div> : null}
+                  </td>
+                  <td className="py-1.5 text-right tabular font-medium">{r.value === null ? <span className="text-muted">–</span> : fmtMoneyShort(r.value)}</td>
+                  <td className="w-12 py-1.5 text-right tabular text-[12px] text-muted">{r.value === null ? "" : share(r.value)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-2 space-y-1 text-[11.5px] text-muted">
+            {inv.unreadable.length ? <p>Leaves out {inv.unreadable.join(", ")}: the Zoho login can’t read {inv.unreadable.length === 1 ? "it" : "them"} yet.</p> : null}
+            {inv.estimated > 0 ? (
+              <p>
+                {inv.estimated >= stockValue - 0.5 ? "All of the stock value" : `${fmtMoneyShort(inv.estimated)} of the ${fmtMoneyShort(stockValue)} stock value`} is an estimate: Zoho has no purchase price for{" "}
+                {inv.estimated >= stockValue - 0.5 ? "these products" : "some products"}, so they are valued at a share of the selling price.
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 text-[12.5px] font-medium text-ink-2">By segment</div>
+          <ul className="space-y-2.5">
+            {inv.bySegment.map((g) => (
+              <li key={g.segment}>
+                <Link href={`/stock?segment=${g.segment}`} className="block rounded-md px-1 py-0.5 hover:bg-sunken" title={`Open Stock health for ${segmentLabel(g.segment)}`}>
+                  <div className="mb-1 flex items-baseline justify-between gap-2 text-[13px]">
+                    <span className="inline-flex items-center gap-1.5 font-medium">
+                      <span className="inline-block h-2 w-2 rounded-full" style={{ background: SEGMENT_COLOR[g.segment] }} aria-hidden /> {segmentLabel(g.segment)}
+                    </span>
+                    <span className="tabular">
+                      <span className="font-semibold">{fmtMoneyShort(g.value)}</span> <span className="text-[12px] text-muted">{stockValue ? Math.round((g.value / stockValue) * 100) : 0}%</span>
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-sunken">
+                    <div className="h-2 rounded-full" style={{ width: `${(g.value / maxSeg) * 100}%`, background: SEGMENT_COLOR[g.segment] }} />
+                  </div>
+                  <div className="mt-0.5 text-[11.5px] text-muted">
+                    {g.products} product{g.products === 1 ? "" : "s"} · {fmtInt(g.units)} units
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {inv.bySegment.some((g) => g.segment === "none") ? (
+            <p className="mt-2 text-[11.5px] text-muted">“Not set in Zoho”: the item has no Segment field value in Zoho yet.</p>
+          ) : null}
+        </div>
+      </div>
+    </Card>
   );
 }

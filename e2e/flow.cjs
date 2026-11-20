@@ -20,7 +20,7 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   const drawer = p.getByRole('dialog', { name: 'Hair Serum' });
   await drawer.waitFor();
   const dtext = await drawer.innerText();
-  ok(dtext.includes('7.0 / day') && dtext.includes('375'), 'drawer: Hair Serum rate 7/day and order 375');
+  ok(dtext.includes('7.0 / day') && dtext.includes('900'), 'drawer: Hair Serum rate 7/day and order 900');
   await p.screenshot({ path: OUT + '/drawer.png' });
   await drawer.getByRole('button', { name: 'Close' }).click();
 
@@ -68,12 +68,13 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   await p.goto(B + '/indent', { waitUntil: 'networkidle' });
   await p.getByLabel('Select Hair Serum').check();
   await p.getByRole('button', { name: /Approve selected \(1\)/ }).click();
-  ok((await p.locator('tr', { hasText: 'Hair Serum' }).innerText()).includes('Approved 375'), 'indent: Management approved Hair Serum 375');
+  ok((await p.locator('tr', { hasText: 'Hair Serum' }).innerText()).includes('Approved 900'), 'indent: Management approved Hair Serum 900');
 
   // 5. Lead-time matrix tab
   await p.getByRole('tab', { name: 'If stock takes 7–90 days' }).click();
   const hs = await p.locator('tr', { hasText: 'Hair Serum' }).first().innerText();
-  ok(/319[\s\S]*375[\s\S]*480[\s\S]*690[\s\S]*900/.test(hs) && hs.includes('9d empty'), 'indent matrix: 319/375/480/690/900 with 9 days empty at 30d');
+  // 7 × (lead + 45) + 630 − 150 for leads 7 / 15 / 30 / 60 / 90
+  ok(/844[\s\S]*900[\s\S]*1,005[\s\S]*1,215[\s\S]*1,425/.test(hs) && hs.includes('9d empty'), 'indent matrix: 844/900/1,005/1,215/1,425 with 9 days empty at 30d');
 
   // 6. Consolidated report picks up the new sales plan
   await p.goto(B + '/reports', { waitUntil: 'networkidle' });

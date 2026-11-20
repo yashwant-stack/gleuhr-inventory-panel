@@ -47,52 +47,60 @@ describe("worked example · Hair Serum 50 ml", () => {
   it("150 in stock covers 21 days", () => {
     expect(Math.floor(daysOfCover(150, 7))).toBe(21);
   });
-  it("reorder point = 7 a day × 60 days = 420; 150 in stock is below it → status Low (time to order)", () => {
-    expect(reorderPoint(7, S.reorderAtDays, 15)).toBe(420);
-    expect(stockStatus({ stock: 150, onOrder: 0, nextArrivalDays: null, rate: 7, leadTime: 15, reorderAtDays: 60, overstockDays: 90 })).toBe("low");
+  it("reorder point = 7 a day × 150 days = 1,050; 150 in stock is below it → status Low (time to order)", () => {
+    expect(reorderPoint(7, S.reorderAtDays, 15)).toBe(1050);
+    expect(stockStatus({ stock: 150, onOrder: 0, nextArrivalDays: null, rate: 7, leadTime: 15, reorderAtDays: 150, overstockDays: 180 })).toBe("low");
   });
-  it("order now for lead 15, cover 60 = 7 × (15 + 60) − 150 = 375", () => {
-    expect(indentQuantity({ rate: 7, leadTime: 15, coverDays: S.defaultCoverDays, reorderAtDays: S.reorderAtDays, stock: 150, onOrder: 0, packSize: 1 })).toEqual({ raw: 375, qty: 375, due: true });
+  it("order now for lead 15, cover 45, safety 90 = 7 × (15 + 45) + 7 × 90 − 150 = 900", () => {
+    expect(indentQuantity({ rate: 7, leadTime: 15, coverDays: S.defaultCoverDays, safetyDays: S.purchaseSafetyDays, reorderAtDays: S.reorderAtDays, stock: 150, onOrder: 0, packSize: 1 })).toEqual({ raw: 900, qty: 900, due: true, safety: 630, extra: 0 });
   });
-  it("order quantities for lead times 7/15/30/60/90 (cover 60) = 319/375/480/690/900", () => {
+  it("order quantities for lead times 7/15/30/60/90 (cover 45, safety 90) = 844/900/1005/1215/1425", () => {
     const q = [7, 15, 30, 60, 90].map(
-      (L) => indentQuantity({ rate: 7, leadTime: L, coverDays: 60, reorderAtDays: 60, stock: 150, onOrder: 0, packSize: 1 }).qty,
+      (L) => indentQuantity({ rate: 7, leadTime: L, coverDays: 45, safetyDays: 90, reorderAtDays: 150, stock: 150, onOrder: 0, packSize: 1 }).qty,
     );
-    expect(q).toEqual([319, 375, 480, 690, 900]);
+    expect(q).toEqual([844, 900, 1005, 1215, 1425]);
   });
   it("days with no stock for lead times 7/15/30/60/90 = 0/0/9/39/69", () => {
     expect([7, 15, 30, 60, 90].map((L) => daysWithNoStock(150, 7, L))).toEqual([0, 0, 9, 39, 69]);
   });
   it("status by lead time: low / low / critical / critical / critical", () => {
     const st = [7, 15, 30, 60, 90].map((L) =>
-      stockStatus({ stock: 150, onOrder: 0, nextArrivalDays: null, rate: 7, leadTime: L, reorderAtDays: 60, overstockDays: 90 }),
+      stockStatus({ stock: 150, onOrder: 0, nextArrivalDays: null, rate: 7, leadTime: L, reorderAtDays: 150, overstockDays: 180 }),
     );
     expect(st).toEqual(["low", "low", "critical", "critical", "critical"]);
   });
 });
 
-describe("the 60-day purchase rule (decided 17 Nov 2026)", () => {
-  it("defaults: lead time 60 days, order when 60 days of stock are left, order enough for 60 days", () => {
+describe("the purchase rule (decided 20 Nov 2026): order at 150 days, lead 60, cover 45, safety 90", () => {
+  it("defaults", () => {
     expect(DEFAULT_LEAD_DAYS).toBe(60);
-    expect(S.reorderAtDays).toBe(60);
-    expect(S.defaultCoverDays).toBe(60);
+    expect(S).toMatchObject({ reorderAtDays: 150, defaultCoverDays: 45, purchaseSafetyDays: 90, overstockDays: 180 });
   });
-  it("20 a day, 1,200 left (60 days), lead 60: order 1,200 — the stock runs down to 0 as it lands, then 60 days again", () => {
-    const r = indentQuantity({ rate: 20, leadTime: 60, coverDays: 60, reorderAtDays: 60, stock: 1200, onOrder: 0, packSize: 1 });
-    expect(r).toEqual({ raw: 1200, qty: 1200, due: true });
-    expect(daysOfCover(1200 - 20 * 60 + r.qty, 20)).toBe(60);
+  it("20 a day, 3,000 left (150 days), lead 60: order 20 × (60 + 45) + 20 × 90 − 3,000 = 900 (45 days)", () => {
+    const r = indentQuantity({ rate: 20, leadTime: 60, coverDays: 45, safetyDays: 90, reorderAtDays: 150, stock: 3000, onOrder: 0, packSize: 1 });
+    expect(r).toEqual({ raw: 900, qty: 900, due: true, safety: 1800, extra: 0 });
+    // it lands with the 90-day backup untouched (3,000 − 20 × 60 = 1,800), plus the order: 135 days
+    expect(daysOfCover(3000 - 20 * 60 + r.qty, 20)).toBe(135);
   });
-  it("above 60 days of stock nothing is ordered yet, and the panel says when it falls due", () => {
-    expect(indentQuantity({ rate: 7, leadTime: 15, coverDays: 60, reorderAtDays: 60, stock: 450, onOrder: 0, packSize: 1 })).toEqual({ raw: 75, qty: 0, due: false });
-    expect(daysUntilOrder(450, 0, 7, 60, 15)).toBe(4); // (450 − 420) ÷ 7 = 4.3 → in 4 days
-    expect(stockStatus({ stock: 450, onOrder: 0, nextArrivalDays: null, rate: 7, leadTime: 15, reorderAtDays: 60, overstockDays: 90 })).toBe("healthy");
+  it("at 160 days nothing is ordered yet; the order falls due in 10 days, at 150", () => {
+    expect(indentQuantity({ rate: 20, leadTime: 60, coverDays: 45, safetyDays: 90, reorderAtDays: 150, stock: 3200, onOrder: 0, packSize: 1 })).toMatchObject({ qty: 0, due: false });
+    expect(daysUntilOrder(3200, 0, 20, 150, 60)).toBe(10);
+    expect(stockStatus({ stock: 3200, onOrder: 0, nextArrivalDays: null, rate: 20, leadTime: 60, reorderAtDays: 150, overstockDays: 180 })).toBe("healthy");
   });
-  it("stock on the way counts: an open order that lifts stock above 60 days means no new order", () => {
-    expect(indentQuantity({ rate: 7, leadTime: 15, coverDays: 60, reorderAtDays: 60, stock: 150, onOrder: 300, packSize: 1 }).due).toBe(false);
+  it("as you chose: a 15-day supplier ordering at 150 days orders nothing (20 × 60 + 1,800 − 3,000 = 0)", () => {
+    expect(indentQuantity({ rate: 20, leadTime: 15, coverDays: 45, safetyDays: 90, reorderAtDays: 150, stock: 3000, onOrder: 0, packSize: 1 })).toMatchObject({ raw: 0, qty: 0, due: true });
   });
-  it("a lead time longer than 60 days moves the reorder point to the lead time (ordering later would run out first)", () => {
-    expect(reorderPoint(10, 60, 90)).toBe(900);
-    expect(indentQuantity({ rate: 10, leadTime: 90, coverDays: 60, reorderAtDays: 60, stock: 800, onOrder: 0, packSize: 1 })).toEqual({ raw: 700, qty: 700, due: true });
+  it("stock on the way counts: an open order that lifts stock above 150 days means no new order", () => {
+    expect(indentQuantity({ rate: 20, leadTime: 60, coverDays: 45, safetyDays: 90, reorderAtDays: 150, stock: 2500, onOrder: 900, packSize: 1 }).due).toBe(false);
+  });
+  it("a lead time longer than 150 days moves the reorder point to the lead time", () => {
+    expect(reorderPoint(10, 150, 200)).toBe(2000);
+  });
+  it("campaign and festival units bring the order forward and are added to it", () => {
+    // 3,100 left = 155 days: not due on its own; 200 extra campaign units make it due
+    expect(indentQuantity({ rate: 20, leadTime: 60, coverDays: 45, safetyDays: 90, reorderAtDays: 150, stock: 3100, onOrder: 0, packSize: 1 }).due).toBe(false);
+    expect(indentQuantity({ rate: 20, leadTime: 60, coverDays: 45, safetyDays: 90, reorderAtDays: 150, stock: 3100, onOrder: 0, packSize: 1, extraUnits: 200 })).toEqual({ raw: 1000, qty: 1000, due: true, safety: 1800, extra: 200 });
+    expect(daysUntilOrder(3100, 0, 20, 150, 60, 200)).toBe(0);
   });
 });
 
@@ -132,7 +140,7 @@ describe("edge rules", () => {
   it("orders round up to the pack size; ≤ 0 orders nothing", () => {
     expect(roundUpToPack(308, 12)).toBe(312);
     expect(roundUpToPack(-5, 12)).toBe(0);
-    expect(indentQuantity({ rate: 1, leadTime: 7, coverDays: 15, reorderAtDays: 60, stock: 500, onOrder: 0, packSize: 6 }).qty).toBe(0);
+    expect(indentQuantity({ rate: 1, leadTime: 7, coverDays: 15, safetyDays: 0, reorderAtDays: 60, stock: 500, onOrder: 0, packSize: 6 }).qty).toBe(0);
   });
   it("trend factor is capped at ±25%", () => {
     const up = [...Array(30).fill(10), ...Array(30).fill(20)];

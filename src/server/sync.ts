@@ -3,6 +3,7 @@ import "server-only";
 // (sales per channel) into the panel's own database. Every job writes one row to sync_runs
 // (when, ok, rows written, Zoho calls made, a plain note), which the Data health page shows.
 import { addDays, diffDays } from "../lib/dates";
+import { parseSegment } from "../lib/domain/types";
 import { type Db, num } from "./db";
 import type { CrmSource } from "./crm";
 import {
@@ -67,6 +68,13 @@ export function istToday(now = new Date()): string {
   return new Date(now.getTime() + 5.5 * 3_600_000).toISOString().slice(0, 10);
 }
 
+async function settingText(db: Db, key: string, fallback: string): Promise<string> {
+  const [r] = await db.query<{ value: unknown }>("select value from settings where key = $1", [key]);
+  const v = r?.value;
+  const s = typeof v === "string" ? (v.startsWith('"') ? JSON.parse(v) : v) : v;
+  return typeof s === "string" && s.trim() ? s.trim() : fallback;
+}
+
 async function setting(db: Db, key: string, fallback: number): Promise<number> {
   const [r] = await db.query<{ value: unknown }>("select value from settings where key = $1", [key]);
   const v = r?.value;
@@ -97,11 +105,20 @@ async function zohoCatalog(panel: Db, z: ZohoClient): Promise<JobOutput> {
   );
   const items = await listAll<ZohoItemRow>(z, "items", "items");
   if (!items.ok) throw new Error(`Zoho items: ${items.message}`);
+  // Day Regime / Night Regime / Wellness (decided 20 Nov 2026): a custom field on each Zoho item. The item list
+  // carries custom fields as cf_<api name>, and Zoho makes the api name from the label ("Segment" → cf_segment), so
+  // no extra Zoho call is needed: the field named in setting "zoho.segment_field" (default "Segment"), else any
+  // cf_ key with "segment" or "regime" in it. Until the field exists, the item's category is read instead.
+  await panel.exec("alter table products add column if not exists segment text");
+  const wanted = "cf_" + (await settingText(panel, "zoho.segment_field", "Segment")).toLowerCase().replace(/^cf_/, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  const cfKeys = [...new Set(items.data.flatMap((i) => Object.keys(i).filter((k) => k.startsWith("cf_"))))];
+  const segField = cfKeys.includes(wanted) ? wanted : (cfKeys.find((k) => /segment|regime/i.test(k)) ?? null);
   const itemRows = items.data.map((i) => ({
     id: i.item_id,
     sku: i.sku || null,
     name: i.name,
     category: i.category_name || null,
+    segment: parseSegment(segField ? i[segField] : null) ?? parseSegment(i.category_name),
     unit: i.unit || null,
     rate: i.rate === undefined || i.rate === "" ? null : num(i.rate),
     purchase: i.purchase_rate === undefined || i.purchase_rate === "" ? null : num(i.purchase_rate),
@@ -111,10 +128,10 @@ async function zohoCatalog(panel: Db, z: ZohoClient): Promise<JobOutput> {
     track: i.track_inventory !== false,
   }));
   await panel.query(
-    `insert into products (zoho_item_id, sku, name, category, unit, sell_price, purchase_price, reorder_level, vendor_name, active, track_inventory, in_zoho, updated_at)
-     select r.id, r.sku, r.name, r.category, r.unit, r.rate, r.purchase, r.reorder, r.vendor, r.active, r.track, true, now()
-     from jsonb_to_recordset($1::text::jsonb) as r(id text, sku text, name text, category text, unit text, rate numeric, purchase numeric, reorder numeric, vendor text, active boolean, track boolean)
-     on conflict (zoho_item_id) do update set sku = excluded.sku, name = excluded.name, category = excluded.category, unit = excluded.unit,
+    `insert into products (zoho_item_id, sku, name, category, segment, unit, sell_price, purchase_price, reorder_level, vendor_name, active, track_inventory, in_zoho, updated_at)
+     select r.id, r.sku, r.name, r.category, r.segment, r.unit, r.rate, r.purchase, r.reorder, r.vendor, r.active, r.track, true, now()
+     from jsonb_to_recordset($1::text::jsonb) as r(id text, sku text, name text, category text, segment text, unit text, rate numeric, purchase numeric, reorder numeric, vendor text, active boolean, track boolean)
+     on conflict (zoho_item_id) do update set sku = excluded.sku, name = excluded.name, category = excluded.category, segment = excluded.segment, unit = excluded.unit,
        sell_price = excluded.sell_price, purchase_price = excluded.purchase_price, reorder_level = excluded.reorder_level,
        vendor_name = excluded.vendor_name, active = excluded.active, track_inventory = excluded.track_inventory, in_zoho = true, updated_at = now()`,
     [JSON.stringify(itemRows)],
@@ -127,7 +144,11 @@ async function zohoCatalog(panel: Db, z: ZohoClient): Promise<JobOutput> {
     [JSON.stringify(itemRows.map((i) => i.id))],
   );
   const goneN = gone[0]?.n ?? 0;
-  return { rows: locRows.length + itemRows.length, note: `${locRows.length} locations, ${itemRows.length} items${goneN ? `; ${goneN} no longer in Zoho` : ""}` };
+  const segN = itemRows.filter((i) => i.segment).length;
+  return {
+    rows: locRows.length + itemRows.length,
+    note: `${locRows.length} locations, ${itemRows.length} items${goneN ? `; ${goneN} no longer in Zoho` : ""}; segment ${segField ? `from field ${segField}` : "field not in Zoho yet"} (${segN} items set)`,
+  };
 }
 
 async function zohoStock(panel: Db, z: ZohoClient, now: Date): Promise<JobOutput> {

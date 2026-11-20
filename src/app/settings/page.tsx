@@ -135,8 +135,11 @@ export default function SettingsPage() {
       <Card className="mt-3">
         <CardHeader title="Stock status and ordering" />
         <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Order when stock falls to" help="Reorder point: days of sales left (or the lead time, when longer)">
-            <NumInput value={f.reorderAtDays} onChange={(n) => set("reorderAtDays", n)} disabled={ro} suffix="days" min={1} max={180} />
+          <Field label="Order when stock falls to" help="Reorder point: days of sales left (or the lead time, when longer). Default 150">
+            <NumInput value={f.reorderAtDays} onChange={(n) => set("reorderAtDays", n)} disabled={ro} suffix="days" min={1} max={365} />
+          </Field>
+          <Field label="Safety stock on purchases" help="Days of sales added to every order on top of the cover. Default 90">
+            <NumInput value={f.purchaseSafetyDays} onChange={(n) => set("purchaseSafetyDays", n)} disabled={ro} suffix="days" max={365} />
           </Field>
           <Field label="Clinic top-up safety days" help="Extra days of a clinic’s own usage kept when Mohali tops it up">
             <NumInput value={f.safetyDays} onChange={(n) => set("safetyDays", n)} disabled={ro} suffix="days" max={90} />
@@ -161,6 +164,9 @@ export default function SettingsPage() {
           </Field>
           <Field label="Send to clinics: days each send covers" help="Of the clinic’s own usage">
             <NumInput value={f.replenishCoverDays} onChange={(n) => set("replenishCoverDays", n)} disabled={ro} suffix="days" min={1} max={90} />
+          </Field>
+          <Field label="Unused bottle stock" help="Value at cost of empty bottles not yet filled. Zoho does not hold it yet, so Management enters it here. It is added to the Total inventory value on Purchase’s Home. 0 = not entered">
+            <NumInput value={f.unusedBottleValue ?? 0} onChange={(n) => set("unusedBottleValue", n)} disabled={ro} suffix="₹" max={100000000} />
           </Field>
         </div>
       </Card>

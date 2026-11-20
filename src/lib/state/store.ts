@@ -11,6 +11,7 @@ import { DEFAULT_FORMULA_SETTINGS, type ChannelId, type FormulaSettings } from "
 import type { PlanSubmission } from "../data/plans";
 import { TODAY } from "../mock/dataset";
 import { LEGACY_ROLES, ROLES, type PlanPart, type RoleId } from "../roles";
+import type { Campaign, Festival } from "../data/campaigns";
 
 export type DatePreset = "today" | "7d" | "15d" | "30d" | "60d" | "90d" | "mtd" | "last_month" | "custom";
 
@@ -85,6 +86,9 @@ interface PanelState {
   /** Stock pages: Zoho location ids. */
   locations: string[];
   categories: string[];
+  /** Segment filter, Purchase only (cleared when the role changes). */
+  segments: string[];
+  setSegments: (s: string[]) => void;
   search: string;
   setPreset: (p: Exclude<DatePreset, "custom">) => void;
   setCustomRange: (from: string, to: string) => void;
@@ -118,6 +122,14 @@ interface PanelState {
   // plan submissions made in this browser
   submissions: Record<string, PlanSubmission>;
   submitPlan: (s: PlanSubmission) => void;
+
+  // Marketing impact: campaigns and festival surges (applied ones raise the demand behind Order now)
+  campaigns: Campaign[];
+  festivals: Festival[];
+  saveCampaign: (c: Campaign) => void;
+  removeCampaign: (id: string) => void;
+  saveFestival: (f: Festival) => void;
+  removeFestival: (id: string) => void;
 
   // UI
   openProductId: string | null;
@@ -180,6 +192,8 @@ export const usePanel = create<PanelState>()(
       points: [],
       locations: [],
       categories: [],
+      segments: [],
+      setSegments: (segments) => set({ segments }),
       search: "",
       setPreset: (p) => set({ preset: p, ...presetRange(p) }),
       setCustomRange: (from, to) => set({ preset: "custom", from: from <= to ? from : to, to: from <= to ? to : from }),
@@ -188,10 +202,10 @@ export const usePanel = create<PanelState>()(
       setLocations: (locations) => set({ locations }),
       setCategories: (categories) => set({ categories }),
       setSearch: (search) => set({ search }),
-      resetFilters: () => set({ preset: "30d", ...presetRange("30d"), channels: [], points: [], locations: [], categories: [], search: "" }),
+      resetFilters: () => set({ preset: "30d", ...presetRange("30d"), channels: [], points: [], locations: [], categories: [], segments: [], search: "" }),
 
       role: "management",
-      setRole: (role) => set({ role }),
+      setRole: (role) => set({ role, segments: [] }),
 
       settings: DEFAULT_FORMULA_SETTINGS,
       leadOverrides: {},
@@ -227,17 +241,25 @@ export const usePanel = create<PanelState>()(
       submissions: {},
       submitPlan: (sub) => set((s) => ({ submissions: { ...s.submissions, [`${sub.cycleId}:${sub.part}`]: sub } })),
 
+      campaigns: [],
+      festivals: [],
+      saveCampaign: (c) => set((s) => ({ campaigns: s.campaigns.some((x) => x.id === c.id) ? s.campaigns.map((x) => (x.id === c.id ? c : x)) : [...s.campaigns, c] })),
+      removeCampaign: (id) => set((s) => ({ campaigns: s.campaigns.filter((x) => x.id !== id) })),
+      saveFestival: (f) => set((s) => ({ festivals: s.festivals.some((x) => x.id === f.id) ? s.festivals.map((x) => (x.id === f.id ? f : x)) : [...s.festivals, f] })),
+      removeFestival: (id) => set((s) => ({ festivals: s.festivals.filter((x) => x.id !== id) })),
+
       openProductId: null,
       openProduct: (openProductId) => set({ openProductId }),
     }),
     {
       name: "gleuhr-inventory-panel",
-      version: 5,
+      version: 6,
       // v1 stored old-style location ids; v2 starts its filters fresh; v3 replaces the 7/30/90 weights with
       // the 60-day window (the old weights are dropped, the window starts at its default); v4 (17 Nov 2026)
       // orders at 60 days of stock left for 60 days of cover: the old 30-day default cover becomes 60; v5 (19 Nov
       // 2026) has five roles: old roles map to the new ones, the CBO's addresses become Management's, and plans of
-      // the retired parts (D2C, clinic) are dropped.
+      // the retired parts (D2C, clinic) are dropped; v6 (20 Nov 2026) orders at 150 days with 90 safety days for 45
+      // days of cover, overstock above 180 days: settings still at the old defaults move to the new ones.
       migrate: (persisted, version) => {
         const p = (persisted ?? {}) as {
           settings?: Partial<FormulaSettings> & Record<string, unknown>;
@@ -263,6 +285,11 @@ export const usePanel = create<PanelState>()(
         }
         const { weight7: _w7, weight30: _w30, weight90: _w90, ...kept } = p.settings ?? {};
         if (version < 4 && kept.defaultCoverDays === 30) kept.defaultCoverDays = DEFAULT_FORMULA_SETTINGS.defaultCoverDays;
+        if (version < 6) {
+          if (kept.reorderAtDays === undefined || kept.reorderAtDays === 60) kept.reorderAtDays = DEFAULT_FORMULA_SETTINGS.reorderAtDays;
+          if (kept.defaultCoverDays === undefined || kept.defaultCoverDays === 60) kept.defaultCoverDays = DEFAULT_FORMULA_SETTINGS.defaultCoverDays;
+          if (kept.overstockDays === undefined || kept.overstockDays === 90) kept.overstockDays = DEFAULT_FORMULA_SETTINGS.overstockDays;
+        }
         const settings = { ...DEFAULT_FORMULA_SETTINGS, ...kept };
         return (version < 2 ? { ...p, settings, locations: [], points: [] } : { ...p, settings }) as never;
       },
@@ -282,6 +309,8 @@ export const usePanel = create<PanelState>()(
         schedule: s.schedule,
         approvals: s.approvals,
         submissions: s.submissions,
+        campaigns: s.campaigns,
+        festivals: s.festivals,
       }),
       onRehydrateStorage: () => (state) => {
         // A saved preset re-resolves against today, so "Last 30 days" never goes stale.

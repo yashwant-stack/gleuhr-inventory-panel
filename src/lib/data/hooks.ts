@@ -7,6 +7,7 @@ import { getDataset } from "../mock/dataset";
 import { CYCLES } from "../mock/plans";
 import { PLAN_PARTS, roleById, type PlanPart } from "../roles";
 import { setPanelToday, usePanel } from "../state/store";
+import { eventExtra } from "./campaigns";
 import { computeMetrics, type Filters } from "./engine";
 import { decodeDataset, type Dataset, type DatasetWire } from "./model";
 import { seedSubmissions, type PlanSubmission } from "./plans";
@@ -63,9 +64,12 @@ export function useDataset(): Dataset {
   return ds;
 }
 
+/** One shared empty list: a new [] on every read would make the filter selector loop. */
+const NO_SEGMENTS: string[] = [];
+
 export function useFilters(): Filters {
   return usePanel(
-    useShallow((s) => ({ from: s.from, to: s.to, channels: s.channels, points: s.points, locations: s.locations, categories: s.categories, search: s.search })),
+    useShallow((s) => ({ from: s.from, to: s.to, channels: s.channels, points: s.points, locations: s.locations, categories: s.categories, segments: s.role === "purchase" ? s.segments : NO_SEGMENTS, search: s.search })),
   );
 }
 
@@ -73,7 +77,13 @@ export function useMetrics() {
   const ds = useDataset();
   const settings = usePanel((s) => s.settings);
   const leadOverrides = usePanel((s) => s.leadOverrides);
-  return useMemo(() => computeMetrics(ds, settings, leadOverrides), [ds, settings, leadOverrides]);
+  const campaigns = usePanel((s) => s.campaigns);
+  const festivals = usePanel((s) => s.festivals);
+  return useMemo(() => {
+    const ev = { campaigns, festivals };
+    const any = campaigns.some((c) => c.applied) || festivals.some((f) => f.applied);
+    return computeMetrics(ds, settings, leadOverrides, any ? (pi, from, to) => eventExtra(ds, settings, pi, ev, from, to) : undefined);
+  }, [ds, settings, leadOverrides, campaigns, festivals]);
 }
 
 export function useRole() {

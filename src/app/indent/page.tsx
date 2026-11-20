@@ -105,9 +105,10 @@ export default function IndentPage() {
       .filter((m) => productMatches(m.product, f) && m.rate > 0)
       .map((m) => {
         const L = lead === "own" ? m.leadTime : lead;
-        const ind = indentQuantity({ rate: m.rate, leadTime: L, coverDays: cover, reorderAtDays: settings.reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize });
-        const status = stockStatus({ stock: m.stock, onOrder: m.onOrder, nextArrivalDays: m.nextArrivalDays, rate: m.rate, leadTime: L, reorderAtDays: settings.reorderAtDays, overstockDays: settings.overstockDays });
-        const inDays = daysUntilOrder(m.stock, m.onOrder, m.rate, settings.reorderAtDays, L) ?? 0;
+        const extra = m.extraFor(L + cover);
+        const ind = indentQuantity({ rate: m.rate, leadTime: L, coverDays: cover, safetyDays: settings.purchaseSafetyDays, reorderAtDays: settings.reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: extra });
+        const status = stockStatus({ stock: m.stock, onOrder: m.onOrder, nextArrivalDays: m.nextArrivalDays, rate: m.rate, leadTime: L, reorderAtDays: settings.reorderAtDays, overstockDays: settings.overstockDays, extraUnits: extra });
+        const inDays = daysUntilOrder(m.stock, m.onOrder, m.rate, settings.reorderAtDays, L, extra) ?? 0;
         const orderBy = addDays(ds.today, inDays);
         const rp = reorderPoint(m.rate, settings.reorderAtDays, L);
         return { m, L, ind, status, inDays, orderBy, rp, arrives: addDays(orderBy, L), value: ind.qty * m.product.cost };
@@ -170,7 +171,7 @@ export default function IndentPage() {
     <div>
       <PageHeader
         title="Auto indent"
-        sub={`What to order now and how much. Order = daily rate × (lead time + cover days) − current stock − stock on the way, rounded up to the pack size, once the stock left falls to ${settings.reorderAtDays} days of sales.`}
+        sub={`What to order now and how much. Order = daily rate × (lead time + cover days) + safety stock (${settings.purchaseSafetyDays} days) − current stock − stock on the way (+ campaign and festival units), rounded up to the pack size, once the stock left falls to ${settings.reorderAtDays} days of sales.`}
         right={
           <>
             <Button icon={<Download size={14} />} onClick={exportList} disabled={IS_PREVIEW} disabledReason={PREVIEW_NO_DOWNLOAD}>
@@ -389,8 +390,8 @@ export default function IndentPage() {
           </div>
         ) : null}
 
-        {tab === "lead" ? <LeadMatrix rows={matrixRows} cover={cover} extraLead={leadChoice === "custom" ? customLead : null} reorderAtDays={settings.reorderAtDays} onOpen={openProduct} /> : null}
-        {tab === "cover" ? <CoverMatrix rows={matrixRows} extraCover={coverChoice === "custom" ? customCover : null} reorderAtDays={settings.reorderAtDays} onOpen={openProduct} /> : null}
+        {tab === "lead" ? <LeadMatrix rows={matrixRows} cover={cover} extraLead={leadChoice === "custom" ? customLead : null} reorderAtDays={settings.reorderAtDays} safetyDays={settings.purchaseSafetyDays} onOpen={openProduct} /> : null}
+        {tab === "cover" ? <CoverMatrix rows={matrixRows} extraCover={coverChoice === "custom" ? customCover : null} reorderAtDays={settings.reorderAtDays} safetyDays={settings.purchaseSafetyDays} onOpen={openProduct} /> : null}
       </Card>
     </div>
   );
@@ -399,7 +400,7 @@ export default function IndentPage() {
 /** The fixed day columns, plus the custom number when one is chosen (in order, no repeats). */
 const withExtra = (fixed: readonly number[], extra: number | null) => (extra === null || fixed.includes(extra) ? [...fixed] : [...fixed, extra].sort((a, b) => a - b));
 
-function LeadMatrix({ rows, cover, extraLead, reorderAtDays, onOpen }: { rows: ProductMetrics[]; cover: number; extraLead: number | null; reorderAtDays: number; onOpen: (id: string) => void }) {
+function LeadMatrix({ rows, cover, extraLead, reorderAtDays, safetyDays, onOpen }: { rows: ProductMetrics[]; cover: number; extraLead: number | null; reorderAtDays: number; safetyDays: number; onOpen: (id: string) => void }) {
   const leads = withExtra(LEAD_TIME_OPTIONS, extraLead);
   return (
     <div>
@@ -427,7 +428,7 @@ function LeadMatrix({ rows, cover, extraLead, reorderAtDays, onOpen }: { rows: P
                 <td className="num">{fmtInt(m.stock)}</td>
                 <td className="num">{fmtRate(m.rate)}</td>
                 {leads.map((L) => {
-                  const q = indentQuantity({ rate: m.rate, leadTime: L, coverDays: cover, reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize }).qty;
+                  const q = indentQuantity({ rate: m.rate, leadTime: L, coverDays: cover, safetyDays, reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: m.extraFor(L + cover) }).qty;
                   const gap = daysWithNoStock(m.stock + m.onOrder, m.rate, L);
                   return (
                     <td key={L} className="num">
@@ -445,7 +446,7 @@ function LeadMatrix({ rows, cover, extraLead, reorderAtDays, onOpen }: { rows: P
   );
 }
 
-function CoverMatrix({ rows, extraCover, reorderAtDays, onOpen }: { rows: ProductMetrics[]; extraCover: number | null; reorderAtDays: number; onOpen: (id: string) => void }) {
+function CoverMatrix({ rows, extraCover, reorderAtDays, safetyDays, onOpen }: { rows: ProductMetrics[]; extraCover: number | null; reorderAtDays: number; safetyDays: number; onOpen: (id: string) => void }) {
   const covers = withExtra(COVER_OPTIONS, extraCover);
   const i90 = covers.indexOf(90);
   return (
@@ -467,7 +468,7 @@ function CoverMatrix({ rows, extraCover, reorderAtDays, onOpen }: { rows: Produc
           </thead>
           <tbody>
             {rows.map((m) => {
-              const qs = covers.map((c) => indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: c, reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize }).qty);
+              const qs = covers.map((c) => indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: c, safetyDays, reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: m.extraFor(m.leadTime + c) }).qty);
               return (
                 <tr key={m.product.id} className="clickable" onClick={() => onOpen(m.product.id)}>
                   <td className="max-w-[230px] truncate font-medium">{m.product.name}</td>

@@ -61,11 +61,23 @@ export const PAGE_ACCESS: Record<string, Access[]> = {
   "/alerts": ["admin", "viewer"],
   "/settings": ["admin", "viewer"],
   "/health": ["admin", "viewer"],
+  "/marketing-impact": ["viewer"],
 };
 
-export function canOpen(path: string, access: Access): boolean {
+/** Pages only some roles see at all (decided 20 Nov 2026: the Purchase-only additions). Other roles don't get the nav item. */
+export const PAGE_ROLES: Record<string, RoleId[]> = {
+  "/marketing-impact": ["purchase"],
+};
+
+export function canOpen(path: string, access: Access, roleId?: RoleId): boolean {
   const key = Object.keys(PAGE_ACCESS)
     .filter((k) => k === "/" ? path === "/" : path === k || path.startsWith(k + "/"))
     .sort((a, b) => b.length - a.length)[0];
+  if (key && PAGE_ROLES[key] && !(roleId && PAGE_ROLES[key]!.includes(roleId))) return false;
   return key ? (PAGE_ACCESS[key] ?? []).includes(access) : true;
+}
+
+/** false = the page is not shown in this role's nav at all (rather than shown locked). */
+export function inNav(path: string, roleId: RoleId): boolean {
+  return !PAGE_ROLES[path] || PAGE_ROLES[path]!.includes(roleId);
 }

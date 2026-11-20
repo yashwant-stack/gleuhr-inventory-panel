@@ -1,0 +1,87 @@
+// Browser check: the Purchase-only additions of 20 Nov 2026 (npm run build:preview first). Purchase's Home shows the
+// Total inventory value and the segment split instead of "Sales over time"; Marketing impact is in Purchase's menu
+// only, and an applied campaign raises Order now on Auto indent.
+const { chromium } = require('playwright');
+const path = require('path');
+const FILE = 'file://' + path.resolve(__dirname, '..', 'preview-dist', 'gleuhr-inventory-panel-local.html');
+const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
+
+(async () => {
+  const b = await chromium.launch();
+  const p = await b.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 2 });
+  const errors = [];
+  p.on('pageerror', (e) => errors.push(e.message));
+  const ok = (cond, msg) => { console.log((cond ? 'PASS ' : 'FAIL ') + msg); if (!cond) process.exitCode = 1; };
+  const role = async (name) => {
+    await p.getByRole('button', { name: 'Viewing as', exact: true }).click();
+    await p.getByRole('option', { name: new RegExp('^' + name) }).click();
+    await p.waitForTimeout(300);
+  };
+  const nav = () => p.getByRole('navigation', { name: 'Main' }).first().innerText();
+  const serumOrder = async () => {
+    await p.goto(FILE + '#indent'); await p.waitForTimeout(500);
+    const t = await p.locator('tr', { hasText: 'Hair Serum' }).first().innerText();
+    return t;
+  };
+
+  await p.goto(FILE, { waitUntil: 'load' });
+  await p.waitForTimeout(500);
+  ok((await p.locator('main').innerText()).includes('Sales over time') && !(await p.locator('main').innerText()).includes('Total inventory value'), 'Management: Home keeps Sales over time, no inventory value card');
+  ok(!(await nav()).includes('Marketing impact'), 'Management: no Marketing impact in the menu');
+
+  await role('Purchase');
+  const home = await p.locator('main').innerText();
+  ok(home.includes('Total inventory value') && !home.includes('Sales over time'), 'Purchase: Home shows Total inventory value, Sales over time is gone');
+  ok(/Mohali warehouse[\s\S]*Clinics \(\d+\)[\s\S]*Unused bottles/.test(home), 'value split: Mohali warehouse, clinics, unused bottles');
+  ok(/Day Regime[\s\S]*Night Regime[\s\S]*Wellness \(edibles\)/.test(home), 'segment split: Day / Night / Wellness');
+  ok(home.includes('is an estimate'), 'says the cost is an estimate where Zoho has no purchase price');
+  ok((await nav()).includes('Marketing impact'), 'Purchase: Marketing impact is in the menu');
+  await p.locator('main').getByText('Total inventory value').first().scrollIntoViewIfNeeded();
+  await p.screenshot({ path: OUT + '/purchase-home.png' });
+
+  // a segment opens Stock health filtered to it
+  await p.getByRole('link', { name: /Night Regime/ }).first().click();
+  await p.waitForTimeout(500);
+  ok((await p.locator('h1').innerText()).startsWith('Stock health') && (await p.getByRole('button', { name: /Segment/ }).first().innerText()).includes('Night'), 'segment link opens Stock health filtered to Night Regime');
+  const table = await p.locator('main table').first().innerText();
+  ok(table.includes('Hair Serum') && !table.includes('UV Armour Sunscreen'), 'the stock table keeps Night Regime products and drops a Day Regime one');
+
+  const before = await serumOrder();
+  ok(before.includes('900'), 'Auto indent before: Hair Serum 900');
+
+  // a campaign on Hair Serum, applied to planning
+  await p.goto(FILE + '#marketing-impact'); await p.waitForTimeout(500);
+  ok((await p.locator('h1').innerText()).startsWith('Marketing impact'), 'Marketing impact opens for Purchase');
+  await p.getByRole('button', { name: 'New campaign' }).click();
+  await p.getByLabel('Campaign name').fill('Hair week');
+  await p.getByLabel('Ad budget').fill('50000');
+  await p.getByRole('button', { name: /^Products/ }).click();
+  await p.getByRole('option', { name: 'Hair Serum', exact: true }).click();
+  await p.keyboard.press('Escape');
+  await p.getByLabel('Expected uplift').fill('50');
+  await p.waitForTimeout(300);
+  const form = await p.getByRole('region', { name: 'Campaign form' }).innerText();
+  ok(/Conservative \(\+10%\)[\s\S]*Expected \(\+50%\)[\s\S]*Aggressive \(\+30%\)/.test(form), 'the scenario table shows all three uplifts');
+  await p.getByText('Product by product').click();
+  await p.waitForTimeout(200);
+  await p.screenshot({ path: OUT + '/marketing-impact-form.png' });
+  const addedRow = (await p.getByRole('region', { name: 'Campaign form' }).locator('tr', { hasText: 'Hair Serum' }).innerText()).replace(/\s+/g, ' ');
+  const [, without, withIt] = addedRow.match(/([\d,]+) → ([\d,]+)/) ?? [];
+  ok(without === '900' && Number(withIt.replace(/,/g, '')) > 900, `preview: Order now ${without} → ${withIt}`);
+  await p.getByRole('button', { name: 'Save and apply to planning' }).click();
+  await p.waitForTimeout(400);
+  ok((await p.locator('tr', { hasText: 'Hair week' }).innerText()).includes('Applied'), 'the campaign is saved as Applied');
+  await p.screenshot({ path: OUT + '/marketing-impact.png' });
+
+  const after = await serumOrder();
+  ok(after.includes(withIt), `Auto indent after: Hair Serum ${withIt}, as the preview said`);
+
+  // the same order number for Management, who approves it
+  await role('Management');
+  ok((await p.locator('tr', { hasText: 'Hair Serum' }).first().innerText()).includes(withIt), 'Management sees the same raised order');
+  await p.goto(FILE + '#marketing-impact'); await p.waitForTimeout(400);
+  ok(!(await p.locator('h1').innerText().catch(() => '')).startsWith('Marketing impact'), 'Management cannot open Marketing impact');
+
+  ok(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
+  await b.close();
+})().catch((e) => { console.error('SCRIPT ERROR', e.message); process.exit(1); });

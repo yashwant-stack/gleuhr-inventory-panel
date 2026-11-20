@@ -202,6 +202,8 @@ export interface ZohoItemRow {
   track_inventory?: boolean;
   stock_on_hand?: number | string | null;
   available_stock?: number | string | null;
+  /** Custom fields arrive as `cf_<api name>` keys (e.g. the Segment field). */
+  [key: string]: unknown;
 }
 
 /** Every page of a list endpoint (200 per page, at most `maxPages`). */

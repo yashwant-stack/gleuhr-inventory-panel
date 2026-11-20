@@ -26,6 +26,8 @@ create table if not exists products (
   sku text,
   name text not null,
   category text,
+  -- Day Regime / Night Regime / Wellness, from the Zoho item's segment field (decided 20 Nov 2026)
+  segment text,
   unit text,
   sell_price numeric,
   purchase_price numeric,
@@ -39,6 +41,8 @@ create table if not exists products (
   in_zoho boolean not null default true,
   updated_at timestamptz not null default now()
 );
+
+alter table products add column if not exists segment text;
 
 -- Latest stock per item per location (one Zoho call per location refreshes a whole column).
 create table if not exists stock_levels (

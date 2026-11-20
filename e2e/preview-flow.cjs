@@ -23,7 +23,7 @@ const HASH = { '/': '', '/sales': 'sales', '/channels': 'channels', '/projection
   await p.getByRole('cell', { name: 'Hair Serum', exact: true }).click();
   const drawer = p.getByRole('dialog', { name: 'Hair Serum' });
   await drawer.waitFor();
-  ok((await drawer.innerText()).includes('375'), 'drawer: Hair Serum order 375');
+  ok((await drawer.innerText()).includes('900'), 'drawer: Hair Serum order 900');
   await drawer.getByRole('button', { name: 'Close' }).click();
 
   // nav link click changes the page and the hash
@@ -62,7 +62,7 @@ const HASH = { '/': '', '/sales': 'sales', '/channels': 'channels', '/projection
   await go('/indent');
   await p.getByLabel('Select Hair Serum').check();
   await p.getByRole('button', { name: /Approve selected \(1\)/ }).click();
-  ok((await p.locator('tr', { hasText: 'Hair Serum' }).innerText()).includes('Approved 375'), 'Management approved Hair Serum 375');
+  ok((await p.locator('tr', { hasText: 'Hair Serum' }).innerText()).includes('Approved 900'), 'Management approved Hair Serum 900');
   const exp = p.getByRole('button', { name: /Export purchase list/ });
   ok((await exp.getAttribute('aria-disabled')) === 'true' && ((await exp.getAttribute('title')) || '').includes('preview'), 'Export is switched off in the preview, with a reason');
 

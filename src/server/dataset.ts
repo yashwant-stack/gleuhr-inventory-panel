@@ -11,7 +11,7 @@ import "server-only";
 // earlier), never at its first sale: a slow seller is not "new" just because it sold late.
 import { addDays, diffDays } from "../lib/dates";
 import type { ChannelInfo, CrmClinic, Dataset, DataHealth, LeftOutProduct, Source } from "../lib/data/model";
-import type { ChannelId, Location, Product, PurchaseOrder, Vendor } from "../lib/domain/types";
+import { parseSegment, type ChannelId, type Location, type Product, type PurchaseOrder, type Vendor } from "../lib/domain/types";
 import { CHANNELS } from "../lib/mock/catalog";
 import { type Db, num } from "./db";
 import { istToday } from "./sync";
@@ -166,9 +166,12 @@ export async function buildDataset(db: Db, now = new Date()): Promise<Dataset> {
       name: String(p.name),
       // Zoho's category, else the online CRM's (Zoho's items carry none today)
       category: (p.category as string | null) || crm.map((c) => c.crm_category).find(Boolean) || "Uncategorised",
+      // from the Zoho item's segment field (or its category); the CRM's category as a last resort
+      segment: parseSegment(p.segment) ?? parseSegment(p.category) ?? parseSegment(crm.map((c) => c.crm_category).find(Boolean)),
       price,
       // Zoho's purchase price of ₹10 or less is a placeholder on many items: fall back to a share of the selling price.
       cost: purchase > 10 ? purchase : Math.round(price * costRatio),
+      costEstimated: !(purchase > 10),
       vendorId,
       leadTimeOverride: null,
       packSize: Math.max(1, num(p.pack_size) || 1),

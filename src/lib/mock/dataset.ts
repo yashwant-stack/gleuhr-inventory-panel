@@ -18,6 +18,7 @@ import {
   SAMPLE_LOCATIONS,
   SAMPLE_PRICE_FACTOR,
   VENDORS,
+  SAMPLE_SEGMENT,
 } from "./catalog";
 
 export const TODAY = "2026-11-14";
@@ -222,8 +223,10 @@ export function getDataset(): Dataset {
       sku: c.sku,
       name: c.name,
       category: c.category,
+      segment: SAMPLE_SEGMENT[c.sku] ?? null,
       price: c.price,
       cost: Math.round(c.price * 0.3),
+      costEstimated: true,
       vendorId: c.vendorId,
       leadTimeOverride: c.sku === "GL-AGELOCK" ? 30 : null,
       packSize: c.packSize,

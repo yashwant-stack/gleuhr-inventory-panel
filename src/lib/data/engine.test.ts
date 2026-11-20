@@ -10,10 +10,10 @@ const bySku = (sku: string) => metrics.find((m) => m.product.sku === sku)!;
 const ALL: Filters = { from: "2026-11-01", to: "2026-11-14", channels: [], points: [], locations: [], categories: [], search: "" };
 
 describe("sample data tells the documented stories", () => {
-  it("Hair Serum is the worked example: 7/day (420 sold in 60 days), 150 in stock (Mohali 110 + Delhi 40) lasts 21 days, Low, order 375", () => {
+  it("Hair Serum is the worked example: 7/day (420 sold in 60 days), 150 in stock (Mohali 110 + Delhi 40) lasts 21 days, Low, order 900", () => {
     const m = bySku("GL-HAIRSER");
-    // below the 420-unit reorder point (60 days): order 7 × (15 lead + 60 cover) − 150 = 375
-    expect(m).toMatchObject({ rate: 7, windowSold: 420, windowDays: 60, stock: 150, warehouseStock: 110, status: "low", reorderAt: 60, reorderPoint: 420, indentQty: 375, indentDue: true });
+    // below the 1,050-unit reorder point (150 days): order 7 × (15 lead + 45 cover) + 7 × 90 safety − 150 = 900
+    expect(m).toMatchObject({ rate: 7, windowSold: 420, windowDays: 60, stock: 150, warehouseStock: 110, status: "low", reorderAt: 150, reorderPoint: 1050, indentQty: 900, indentDue: true, safety: 630, extraUnits: 0 });
     expect(Math.floor(m.cover)).toBe(21);
   });
   it("UV Armour is Critical; Seaweed Gel is rescued by an order landing in 4 days", () => {

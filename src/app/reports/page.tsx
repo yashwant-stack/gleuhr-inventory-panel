@@ -305,12 +305,12 @@ function ReportChain() {
   const orderWithin = (h: number) =>
     metrics
       .map((m) => {
-        const inDays = daysUntilOrder(m.stock, m.onOrder, m.rate, settings.reorderAtDays, m.leadTime);
+        const inDays = daysUntilOrder(m.stock, m.onOrder, m.rate, settings.reorderAtDays, m.leadTime, m.extraUnits);
         // the quantity on the day the order falls due: the stock by then is today's less the sales until then
         const qty =
           inDays === null
             ? 0
-            : indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: settings.defaultCoverDays, reorderAtDays: settings.reorderAtDays, stock: Math.max(0, m.stock - m.rate * inDays), onOrder: m.onOrder, packSize: m.product.packSize }).qty;
+            : indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: settings.defaultCoverDays, safetyDays: settings.purchaseSafetyDays, reorderAtDays: settings.reorderAtDays, stock: Math.max(0, m.stock - m.rate * inDays), onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: m.extraUnits }).qty;
         return { m, inDays, qty };
       })
       .filter((x) => x.inDays !== null && x.inDays <= h && x.qty > 0);
@@ -319,7 +319,7 @@ function ReportChain() {
     let value = 0;
     for (const m of metrics) {
       if (m.rate <= 0) continue;
-      const q = indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: c, reorderAtDays: settings.reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize }).qty;
+      const q = indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: c, safetyDays: settings.purchaseSafetyDays, reorderAtDays: settings.reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: m.extraFor(m.leadTime + c) }).qty;
       units += q;
       value += q * m.product.cost;
     }

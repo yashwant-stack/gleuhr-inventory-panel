@@ -91,8 +91,8 @@ export function safetyStock(rate: number, safetyDays: number): number {
 }
 
 /**
- * Formula 4 · When to order (decided 17 Nov 2026): when the stock left (plus what is on the way) falls to
- * 60 days of sales (the setting). When the lead time is longer than that, at the lead time instead: ordering
+ * Formula 4 · When to order (decided 20 Nov 2026): when the stock left (plus what is on the way) falls to
+ * 150 days of sales (the setting). When the lead time is longer than that, at the lead time instead: ordering
  * any later would run out before the order lands.
  */
 export function orderTriggerDays(reorderAtDays: number, leadTime: number): number {
@@ -107,13 +107,17 @@ export function reorderPoint(rate: number, reorderAtDays: number, leadTime: numb
 export interface IndentInput {
   rate: number;
   leadTime: number;
-  /** Days of sales the order should cover after it lands (default 60). */
+  /** Days of sales the order should cover after it lands (default 45). */
   coverDays: number;
-  /** Order only once the stock left falls to this many days (default 60; see orderTriggerDays). */
+  /** Safety stock kept on top, in days of sales (default 90). */
+  safetyDays: number;
+  /** Order only once the stock left falls to this many days (default 150; see orderTriggerDays). */
   reorderAtDays: number;
   stock: number;
   onOrder: number;
   packSize: number;
+  /** Extra units expected from campaigns and festivals within the order's window (Marketing impact). */
+  extraUnits?: number;
 }
 
 export interface IndentResult {
@@ -123,19 +127,27 @@ export interface IndentResult {
   qty: number;
   /** The stock left (plus on the way) has fallen to the reorder point: the order is due now. */
   due: boolean;
+  /** Safety stock in units = Rate × safety days. */
+  safety: number;
+  /** Campaign and festival units included. */
+  extra: number;
 }
 
 /**
- * Formula 5 · Auto-indent (decided 17 Nov 2026):
- * Order qty = Rate × (Lead time + Cover days) − Current stock − Stock on the way, rounded UP to pack size —
- * so that when the order lands there are `coverDays` (60) days of stock. Nothing is ordered until the stock
- * left falls to the reorder point (60 days). No extra safety stock is added: the 60-day trigger is the buffer.
+ * Formula 5 · Auto-indent (decided 20 Nov 2026):
+ * Order qty = Rate × (Lead time + Cover days) + Safety stock − Current stock − Stock on the way
+ *             (+ campaign and festival units in the window), rounded UP to pack size.
+ * Defaults: lead 60, cover 45, safety 90 days. Nothing is ordered until the stock left falls to the reorder
+ * point (150 days of sales); expected campaign and festival units bring that day forward.
+ * Example: 20 a day, 3,000 in stock (150 days): 20 × (60 + 45) + 20 × 90 − 3,000 = 900 (45 days).
  */
 export function indentQuantity(i: IndentInput): IndentResult {
   const position = Math.max(0, i.stock) + i.onOrder;
-  const raw = clean(i.rate * (i.leadTime + i.coverDays) - position, 2);
-  const due = i.rate > 0 && position <= reorderPoint(i.rate, i.reorderAtDays, i.leadTime);
-  return { raw, qty: due && raw > 0 ? roundUpToPack(raw, i.packSize) : 0, due };
+  const safety = safetyStock(i.rate, i.safetyDays);
+  const extra = Math.max(0, i.extraUnits ?? 0);
+  const raw = clean(i.rate * (i.leadTime + i.coverDays) + safety + extra - position, 2);
+  const due = (i.rate > 0 || extra > 0) && position - extra <= reorderPoint(i.rate, i.reorderAtDays, i.leadTime);
+  return { raw, qty: due && raw > 0 ? roundUpToPack(raw, i.packSize) : 0, due, safety, extra };
 }
 
 /** Formula 6 · Excess units = Current stock − Rate × Overstock days (never below 0; a part-unit counts as one). */
@@ -153,13 +165,15 @@ export interface StatusInput {
   /** Days of stock at which to order (see orderTriggerDays). */
   reorderAtDays: number;
   overstockDays: number;
+  /** Campaign and festival units expected (they bring the order forward). */
+  extraUnits?: number;
 }
 
 /**
  * Section C · Stock status rules.
  *  Critical  — days of cover < lead time: runs out before new stock can arrive
  *              (an open order that lands before the stock-out date means it can, so it is not critical).
- *  Low       — current stock + stock on the way ≤ reorder point (60 days of sales): time to order.
+ *  Low       — current stock + stock on the way (less campaign units) ≤ reorder point (150 days of sales): time to order.
  *  Overstock — days of cover > overstock limit.
  *  Healthy   — everything else.
  *  No sales  — nothing sold in the rate windows (no rate to judge cover by).
@@ -169,7 +183,7 @@ export function stockStatus(s: StatusInput): StockStatus {
   const cover = daysOfCover(s.stock, s.rate);
   const rescuedByOpenOrder = s.nextArrivalDays !== null && s.nextArrivalDays <= cover;
   if (cover < s.leadTime && !rescuedByOpenOrder) return "critical";
-  if (s.stock + s.onOrder <= reorderPoint(s.rate, s.reorderAtDays, s.leadTime)) return "low";
+  if (s.stock + s.onOrder - (s.extraUnits ?? 0) <= reorderPoint(s.rate, s.reorderAtDays, s.leadTime)) return "low";
   if (cover > s.overstockDays) return "overstock";
   return "healthy";
 }
@@ -178,9 +192,9 @@ export function stockStatus(s: StatusInput): StockStatus {
  * When to place the order: the day stock (plus what is on the way) falls to the reorder point.
  * 0 = today (already at or below it).
  */
-export function daysUntilOrder(stock: number, onOrder: number, rate: number, reorderAtDays: number, leadTime: number): number | null {
+export function daysUntilOrder(stock: number, onOrder: number, rate: number, reorderAtDays: number, leadTime: number, extraUnits = 0): number | null {
   if (rate <= 0) return null;
-  const gap = stock + onOrder - reorderPoint(rate, reorderAtDays, leadTime);
+  const gap = stock + onOrder - extraUnits - reorderPoint(rate, reorderAtDays, leadTime);
   return gap <= 0 ? 0 : Math.floor(clean(gap / rate));
 }
 

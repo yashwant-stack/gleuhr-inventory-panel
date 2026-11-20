@@ -2,12 +2,12 @@
 
 import { ArrowRight, Download } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { FilterBar } from "@/components/FilterBar";
 import { Button, Card, CardHeader, Empty, Note, PageHeader, Segmented, sortRows, SortTh, StatTile, STATUS_META, StatusChip } from "@/components/ui";
 import { allTransfers, productMatches, sendToClinics, STATUS_ORDER } from "@/lib/data/engine";
 import { belowZeroStock } from "@/lib/data/model";
-import { useDataset, useFilters, useMetrics } from "@/lib/data/hooks";
+import { useDataset, useFilters, useMetrics, useRole } from "@/lib/data/hooks";
 import { downloadCsv } from "@/lib/csv";
 import { IS_PREVIEW, PREVIEW_NO_DOWNLOAD } from "@/lib/platform";
 import { fmtDay } from "@/lib/dates";
@@ -29,6 +29,13 @@ function StockHealth() {
   const openProduct = usePanel((s) => s.openProduct);
   const params = useSearchParams();
   const [statuses, setStatuses] = useState<StockStatus[]>(() => initialStatuses(params.get("status")));
+  // Purchase's Home links a segment here (?segment=day): start the Segment filter on it
+  const role = useRole();
+  const setSegments = usePanel((s) => s.setSegments);
+  const segParam = params.get("segment");
+  useEffect(() => {
+    if (role.id === "purchase" && segParam) setSegments([segParam]);
+  }, [role.id, segParam, setSegments]);
   const [view, setView] = useState<"summary" | "locations">("summary");
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "urgency", dir: "asc" });
 

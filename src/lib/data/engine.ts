@@ -8,6 +8,7 @@
 // channel whose data starts later (clinic sales from 28 Aug) never drags the average down.
 
 import { addDays, diffDays, parseDay } from "../dates";
+import type { ExtraPart } from "./campaigns";
 import {
   dailyRate,
   daysOfCover,
@@ -23,7 +24,7 @@ import {
   transferSuggestions,
   type TransferSuggestion,
 } from "../domain/formulas";
-import type { ChannelId, FormulaSettings, Location, Product, PurchaseOrder, StockStatus } from "../domain/types";
+import type { ChannelId, FormulaSettings, Location, LocationKind, Product, PurchaseOrder, Segment, StockStatus } from "../domain/types";
 import { DEFAULT_LEAD_DAYS, PROJECTION_HORIZONS } from "../domain/types";
 import { CHANNELS } from "../mock/catalog";
 import { primaryLocation, salesPointId, type Dataset, type Source } from "./model";
@@ -37,6 +38,8 @@ export interface Filters {
   /** Zoho location ids (stock pages). */
   locations: string[];
   categories: string[];
+  /** Day / night / wellness, or "none" for not set (Purchase only, decided 20 Nov 2026). Absent = all. */
+  segments?: string[];
   search: string;
 }
 
@@ -52,8 +55,9 @@ export function sourceMask(ds: Dataset, f: Pick<Filters, "channels" | "points">)
   return ds.sources.map((s) => (f.channels.length === 0 || f.channels.includes(s.channel)) && (f.points.length === 0 || f.points.includes(salesPointId(s))));
 }
 
-export function productMatches(p: Product, f: Pick<Filters, "categories" | "search">): boolean {
+export function productMatches(p: Product, f: Pick<Filters, "categories" | "search" | "segments">): boolean {
   if (f.categories.length > 0 && !f.categories.includes(p.category)) return false;
+  if (f.segments?.length && !f.segments.includes(p.segment ?? "none")) return false;
   const q = f.search.trim().toLowerCase();
   if (q && !p.name.toLowerCase().includes(q) && !p.sku.toLowerCase().includes(q)) return false;
   return true;
@@ -366,6 +370,13 @@ export interface ProductMetrics {
   indentRaw: number;
   /** The order is due now (stock + on the way at or below the reorder point). */
   indentDue: boolean;
+  /** Safety stock in the order (units = rate × purchase safety days). */
+  safety: number;
+  /** Campaign and festival units over the order's window (lead time + cover days), and where they come from. */
+  extraUnits: number;
+  extraParts: ExtraPart[];
+  /** Campaign and festival units over the next `days` days (for other lead times and cover periods). */
+  extraFor: (days: number) => number;
   excess: number;
   /** Last 30 days of usage, every channel (for sparklines). */
   last30: number[];
@@ -376,7 +387,10 @@ export function leadTimeFor(ds: Dataset, p: Product, leadOverrides: Record<strin
   return leadOverrides[p.id] ?? p.leadTimeOverride ?? leadOverrides[`vendor:${p.vendorId}`] ?? vendor?.leadTimeDays ?? DEFAULT_LEAD_DAYS;
 }
 
-export function computeMetrics(ds: Dataset, settings: FormulaSettings, leadOverrides: Record<string, number> = {}): ProductMetrics[] {
+/** Extra units from applied campaigns and festivals for product `pi` between two days (Marketing impact). */
+export type ExtraFn = (pi: number, from: string, to: string) => { units: number; parts: ExtraPart[] };
+
+export function computeMetrics(ds: Dataset, settings: FormulaSettings, leadOverrides: Record<string, number> = {}, extraFn?: ExtraFn): ProductMetrics[] {
   const primary = primaryLocation(ds);
   return ds.products.map((p, pi) => {
     const all = () => true;
@@ -401,7 +415,19 @@ export function computeMetrics(ds: Dataset, settings: FormulaSettings, leadOverr
     const leadTime = leadTimeFor(ds, p, leadOverrides);
     const cover = daysOfCover(stock, r.rate);
     const out = stockOutDate(parseDay(ds.today), cover);
-    const indent = indentQuantity({ rate: r.rate, leadTime, coverDays: settings.defaultCoverDays, reorderAtDays: settings.reorderAtDays, stock, onOrder, packSize: p.packSize });
+    const extraFor = (days: number) => (extraFn && days > 0 ? extraFn(pi, ds.today, addDays(ds.today, days - 1)).units : 0);
+    const window = extraFn ? extraFn(pi, ds.today, addDays(ds.today, leadTime + settings.defaultCoverDays - 1)) : { units: 0, parts: [] };
+    const indent = indentQuantity({
+      rate: r.rate,
+      leadTime,
+      coverDays: settings.defaultCoverDays,
+      safetyDays: settings.purchaseSafetyDays,
+      reorderAtDays: settings.reorderAtDays,
+      stock,
+      onOrder,
+      packSize: p.packSize,
+      extraUnits: window.units,
+    });
     return {
       product: p,
       vendorName: ds.vendors.find((v) => v.id === p.vendorId)?.name ?? "—",
@@ -426,11 +452,15 @@ export function computeMetrics(ds: Dataset, settings: FormulaSettings, leadOverr
       stockOut: out ? out.toISOString().slice(0, 10) : null,
       reorderAt: orderTriggerDays(settings.reorderAtDays, leadTime),
       reorderPoint: reorderPoint(r.rate, settings.reorderAtDays, leadTime),
-      status: stockStatus({ stock, onOrder, nextArrivalDays, rate: r.rate, leadTime, reorderAtDays: settings.reorderAtDays, overstockDays: settings.overstockDays }),
-      orderInDays: daysUntilOrder(stock, onOrder, r.rate, settings.reorderAtDays, leadTime),
+      status: stockStatus({ stock, onOrder, nextArrivalDays, rate: r.rate, leadTime, reorderAtDays: settings.reorderAtDays, overstockDays: settings.overstockDays, extraUnits: window.units }),
+      orderInDays: daysUntilOrder(stock, onOrder, r.rate, settings.reorderAtDays, leadTime, window.units),
       indentQty: indent.qty,
       indentRaw: indent.raw,
       indentDue: indent.due,
+      safety: indent.safety,
+      extraUnits: window.units,
+      extraParts: window.parts,
+      extraFor,
       excess: excessUnits(stock, r.rate, settings.overstockDays),
       last30: usedSeries.slice(-30),
     };
@@ -555,4 +585,61 @@ export const STATUS_ORDER: StockStatus[] = ["critical", "low", "healthy", "overs
 export function urgency(m: ProductMetrics): number {
   const rank = { critical: 0, low: 1, overstock: 2, healthy: 3, no_sales: 4 }[m.status];
   return rank * 10000 + (Number.isFinite(m.cover) ? m.cover : 9999);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Total inventory value (decided 20 Nov 2026, Purchase): the working capital sitting in stock, at purchase cost.
+// = Mohali warehouse + every clinic (+ darkstores) + unused bottles. Stock below zero counts as 0; a location the
+// Zoho login cannot read is left out and named. A product whose Zoho purchase price is missing is valued at the
+// cost fallback (a share of its selling price): that part is reported as an estimate.
+
+export interface InventoryValue {
+  total: number;
+  byKind: Record<LocationKind, number>;
+  /** Locations counted per kind. */
+  counted: Record<LocationKind, number>;
+  bottles: number;
+  /** Locations left out because Zoho cannot read them. */
+  unreadable: string[];
+  /** Part of the stock value that uses an estimated cost. */
+  estimated: number;
+  units: number;
+  bySegment: { segment: Segment | "none"; value: number; units: number; products: number }[];
+}
+
+export function inventoryValue(ds: Dataset, products: Product[], bottleValue: number): InventoryValue {
+  const byKind: Record<LocationKind, number> = { warehouse: 0, clinic: 0, darkstore: 0 };
+  const counted: Record<LocationKind, number> = { warehouse: 0, clinic: 0, darkstore: 0 };
+  const readable = ds.locations.filter((l) => l.readable);
+  for (const l of readable) counted[l.kind] += 1;
+  const seg = new Map<Segment | "none", { value: number; units: number; products: number }>();
+  let estimated = 0;
+  let units = 0;
+  for (const p of products) {
+    let pv = 0;
+    let pu = 0;
+    for (const l of readable) {
+      const q = Math.max(0, ds.stock[p.id]?.[l.id] ?? 0);
+      byKind[l.kind] += q * p.cost;
+      pv += q * p.cost;
+      pu += q;
+    }
+    units += pu;
+    if (p.costEstimated) estimated += pv;
+    const key = p.segment ?? "none";
+    const cur = seg.get(key) ?? { value: 0, units: 0, products: 0 };
+    seg.set(key, { value: cur.value + pv, units: cur.units + pu, products: cur.products + 1 });
+  }
+  const order: (Segment | "none")[] = ["day", "night", "wellness", "none"];
+  const bottles = Math.max(0, bottleValue);
+  return {
+    total: byKind.warehouse + byKind.clinic + byKind.darkstore + bottles,
+    byKind,
+    counted,
+    bottles,
+    unreadable: ds.locations.filter((l) => !l.readable).map((l) => l.name),
+    estimated,
+    units,
+    bySegment: order.filter((k) => seg.has(k)).map((k) => ({ segment: k, ...seg.get(k)! })),
+  };
 }

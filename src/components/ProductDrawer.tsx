@@ -179,7 +179,7 @@ export function ProductDrawer() {
                   m.status === "critical"
                     ? `${fmtDays(m.cover)} days of cover < ${m.leadTime}-day lead time: runs out before new stock can arrive`
                     : m.status === "low"
-                      ? `${fmtInt(m.stock)} + ${fmtInt(m.onOrder)} on the way ≤ reorder point ${fmtInt(m.reorderPoint)}: time to order`
+                      ? `${fmtInt(m.stock)} + ${fmtInt(m.onOrder)} on the way${m.extraUnits ? ` − ${fmtInt(Math.round(m.extraUnits))} campaign / festival units` : ""} ≤ reorder point ${fmtInt(m.reorderPoint)}: time to order`
                       : m.status === "overstock"
                         ? `${fmtDays(m.cover)} days of cover > ${w.overstockDays}-day limit · ${fmtInt(m.excess)} excess units`
                         : m.status === "no_sales"
@@ -193,7 +193,9 @@ export function ProductDrawer() {
                 title={`Order quantity (cover ${w.defaultCoverDays} days)`}
                 formula={
                   <>
-                    {exactRate(m.rate)} × ({m.leadTime} lead + {w.defaultCoverDays} cover) − {fmtInt(m.stock)} stock − {fmtInt(m.onOrder)} on the way = {fmtRate(m.indentRaw)}
+                    {exactRate(m.rate)} × ({m.leadTime} lead + {w.defaultCoverDays} cover) + {fmtInt(Math.round(m.safety))} safety ({w.purchaseSafetyDays} days)
+                    {m.extraUnits ? ` + ${fmtInt(Math.round(m.extraUnits))} campaign / festival` : ""} − {fmtInt(m.stock)} stock − {fmtInt(m.onOrder)} on the way = {fmtRate(m.indentRaw)}
+                    {m.extraParts.length ? <span className="block">{m.extraParts.map((x) => `${x.name}: +${fmtInt(Math.round(x.units))} (${x.pct}% for ${x.days} days)`).join(" · ")}</span> : null}
                     {p.packSize > 1 ? ` → round up to pack of ${p.packSize}` : ""}
                     {!m.indentDue && m.rate > 0 ? ` · not due yet: the stock left is above the reorder point${m.orderInDays ? ` (due in ${m.orderInDays} days)` : ""}` : ""}
                   </>

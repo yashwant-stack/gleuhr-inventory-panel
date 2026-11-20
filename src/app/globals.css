@@ -26,6 +26,11 @@
   --color-ch-flipkart: #eda100;
   --color-ch-website: #e87ba4;
 
+  /* product segments (Purchase): day, night, wellness */
+  --color-seg-day: #eda100;
+  --color-seg-night: #4b5f99;
+  --color-seg-wellness: #1baf7a;
+
   /* status — reserved, always shown with an icon + label */
   --color-st-critical: #d03b3b;
   --color-st-critical-soft: #fbe9e9;
