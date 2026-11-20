@@ -11,14 +11,14 @@ import { connectedChannels } from "@/lib/data/model";
 import { useDataset, useFilters, useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
 import { cycleState, submissionStatus } from "@/lib/data/plans";
 import { diffDays, fmtDay, fmtRange } from "@/lib/dates";
-import { SEGMENTS, type ChannelId } from "@/lib/domain/types";
+import { purchaseRule, SEGMENTS, type ChannelId, type FormulaSettings } from "@/lib/domain/types";
 import { fmtDays, fmtInt, fmtMoneyShort, fmtRate, pctChange } from "@/lib/format";
 import { CYCLES } from "@/lib/mock/plans";
 import { PLAN_PARTS, roleById } from "@/lib/roles";
 import { usePanel } from "@/lib/state/store";
 
 type ActionTab = "all" | "critical" | "low" | "overstock";
-const COVER_DAYS = [7, 15, 30, 45, 60, 90];
+const COVER_DAYS = [7, 15, 30, 45, 60, 90, 150, 180];
 
 export default function HomePage() {
   const ds = useDataset();
@@ -30,8 +30,8 @@ export default function HomePage() {
   const subs = useSubmissions();
   const [measure, setMeasure] = useState<"value" | "units">("value");
   const [tab, setTab] = useState<ActionTab>("all");
-  // starts on the cover days set in Settings (what Auto indent uses), else 30
-  const [cover, setCover] = useState<number>(() => (COVER_DAYS.includes(settings.defaultCoverDays) ? settings.defaultCoverDays : 45));
+  // starts on each product's own rule (its regimen's target), as Auto indent does; a fixed number of days is a what-if
+  const [cover, setCover] = useState<number | "own">("own");
 
   const channels = (f.channels.length ? f.channels : connectedChannels(ds));
   const sales = useMemo(() => salesByProduct(ds, f), [ds, f]);
@@ -74,7 +74,9 @@ export default function HomePage() {
   };
   const rows = lists[tab];
   const orderFor = (m: ProductMetrics) =>
-    indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: cover, safetyDays: settings.purchaseSafetyDays, reorderAtDays: settings.reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: m.extraFor(m.leadTime + cover) }).qty;
+    cover === "own"
+      ? m.indentQty
+      : indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: cover, safetyDays: m.rule.safetyDays, reorderAtDays: m.rule.reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: m.extraFor(m.leadTime + cover) }).qty;
 
   const weekly = CYCLES.find((c) => c.kind === "weekly" && cycleState(c, ds.today) === "open");
   const nextMonthly = CYCLES.filter((c) => c.kind === "monthly" && cycleState(c, ds.today) === "upcoming").sort((a, b) => a.requestOn.localeCompare(b.requestOn))[0];
@@ -93,7 +95,7 @@ export default function HomePage() {
       </div>
 
       <div className="mt-3 grid gap-3 xl:grid-cols-3">
-        {inv ? <InventoryValueCard inv={inv} filtered={f.categories.length + (f.search ? 1 : 0) > 0} segmentFilter={(f.segments?.length ?? 0) > 0} /> : <Card className="xl:col-span-2">
+        {inv ? <InventoryValueCard inv={inv} filtered={f.categories.length + (f.search ? 1 : 0) > 0} segmentFilter={(f.segments?.length ?? 0) > 0} settings={settings} /> : <Card className="xl:col-span-2">
           <CardHeader
             title="Sales over time"
             sub={`${fmtRange(f.from, f.to)} · by channel`}
@@ -160,7 +162,7 @@ export default function HomePage() {
                     label="Order to cover"
                     value={cover}
                     onChange={setCover}
-                    options={COVER_DAYS.map((d) => ({ value: d, label: `${d} days` }))}
+                    options={[{ value: "own" as const, label: "Each product’s rule" }, ...COVER_DAYS.map((d) => ({ value: d, label: `${d} days` }))]}
                   />
                 </div>
               ) : null}
@@ -176,7 +178,7 @@ export default function HomePage() {
                   <th className="num">Days left</th>
                   <th>Runs out</th>
                   <th>Status</th>
-                  <th className="num">{tab === "overstock" ? "Excess units" : `Order for ${cover} days`}</th>
+                  <th className="num">{tab === "overstock" ? "Excess units" : cover === "own" ? "Order now" : `Order for ${cover} days`}</th>
                 </tr>
               </thead>
               <tbody>
@@ -257,7 +259,7 @@ const SEGMENT_COLOR: Record<string, string> = { day: "var(--color-seg-day)", nig
 const segmentLabel = (k: string) => SEGMENTS.find((g) => g.id === k)?.label ?? "Not set in Zoho";
 
 /** Purchase's Home: the working capital in stock, where it sits and which segment it is in. */
-function InventoryValueCard({ inv, filtered, segmentFilter }: { inv: InventoryValue; filtered: boolean; segmentFilter: boolean }) {
+function InventoryValueCard({ inv, filtered, segmentFilter, settings }: { inv: InventoryValue; filtered: boolean; segmentFilter: boolean; settings: FormulaSettings }) {
   const stockValue = inv.total - inv.bottles;
   const share = (v: number) => (inv.total ? `${Math.round((v / inv.total) * 100)}%` : "–");
   const rows: { label: string; value: number | null; note?: string }[] = [
@@ -321,6 +323,7 @@ function InventoryValueCard({ inv, filtered, segmentFilter }: { inv: InventoryVa
                   </div>
                   <div className="mt-0.5 text-[11.5px] text-muted">
                     {g.products} product{g.products === 1 ? "" : "s"} · {fmtInt(g.units)} units
+                    {g.segment === "none" ? "" : ` · ${purchaseRule(g.segment, settings).label.replace(/^[^:]+: /, "")}`}
                   </div>
                 </Link>
               </li>
@@ -328,7 +331,7 @@ function InventoryValueCard({ inv, filtered, segmentFilter }: { inv: InventoryVa
           </ul>
           {segmentFilter ? <p className="mt-2 text-[11.5px] text-muted">The Segment filter narrows the product lists; this card always shows every segment.</p> : null}
           {inv.bySegment.some((g) => g.segment === "none") ? (
-            <p className="mt-2 text-[11.5px] text-muted">“Not set in Zoho”: the item has no Segment field value in Zoho yet.</p>
+            <p className="mt-2 text-[11.5px] text-muted">“Not set in Zoho”: the item’s Type Regimen field in Zoho is empty. Fill it in Zoho (Day Regime, Night Regime or Wellness) and the next sync moves it.</p>
           ) : null}
         </div>
       </div>

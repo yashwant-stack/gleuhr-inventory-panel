@@ -133,21 +133,36 @@ export default function SettingsPage() {
       </Card>
 
       <Card className="mt-3">
-        <CardHeader title="Stock status and ordering" />
+        <CardHeader
+          title="Stock status and ordering"
+          sub="Each product follows its Type Regimen from Zoho. Order = daily rate × (lead time + target days) − stock − on the way, so the stock is back at the target on the day the order lands."
+        />
         <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Order when stock falls to" help="Reorder point: days of sales left (or the lead time, when longer). Default 150">
+          <Field label="Night Regime: order when stock falls to" help="Days of sales left (or the lead time, when longer). Default 150">
+            <NumInput value={f.nightReorderAtDays} onChange={(n) => set("nightReorderAtDays", n)} disabled={ro} suffix="days" min={1} max={365} />
+          </Field>
+          <Field label="Night Regime: back to" help="Days of stock on the day the order lands. Default 180 (with a 60-day lead time: a 90-day order)">
+            <NumInput value={f.nightTargetDays} onChange={(n) => set("nightTargetDays", n)} disabled={ro} suffix="days" min={1} max={365} />
+          </Field>
+          <Field label="Day Regime and Wellness: order when stock falls to" help="Days of sales left (or the lead time, when longer). Default 120">
+            <NumInput value={f.dayReorderAtDays} onChange={(n) => set("dayReorderAtDays", n)} disabled={ro} suffix="days" min={1} max={365} />
+          </Field>
+          <Field label="Day Regime and Wellness: back to" help="Days of stock on the day the order lands. Default 150">
+            <NumInput value={f.dayTargetDays} onChange={(n) => set("dayTargetDays", n)} disabled={ro} suffix="days" min={1} max={365} />
+          </Field>
+          <Field label="No regimen: order when stock falls to" help="Products with no Type Regimen in Zoho yet. Default 150">
             <NumInput value={f.reorderAtDays} onChange={(n) => set("reorderAtDays", n)} disabled={ro} suffix="days" min={1} max={365} />
           </Field>
-          <Field label="Safety stock on purchases" help="Days of sales added to every order on top of the cover. Default 90">
+          <Field label="No regimen: safety stock" help="Days of sales added on top of the cover, for products with no Type Regimen yet. Default 90">
             <NumInput value={f.purchaseSafetyDays} onChange={(n) => set("purchaseSafetyDays", n)} disabled={ro} suffix="days" max={365} />
           </Field>
           <Field label="Clinic top-up safety days" help="Extra days of a clinic’s own usage kept when Mohali tops it up">
             <NumInput value={f.safetyDays} onChange={(n) => set("safetyDays", n)} disabled={ro} suffix="days" max={90} />
           </Field>
-          <Field label="Overstock limit" help="More days of cover than this = Overstock">
+          <Field label="Overstock limit" help="More days of cover than this = Overstock. Default 210, above the 180-day Night Regime target">
             <NumInput value={f.overstockDays} onChange={(n) => set("overstockDays", n)} disabled={ro} suffix="days" min={15} max={365} />
           </Field>
-          <Field group label="Default cover for auto indent" help="How long an order should last after it arrives">
+          <Field group label="No regimen: cover" help="How long an order should last after it arrives, for products with no Type Regimen yet">
             <Segmented<number> value={f.defaultCoverDays} onChange={(v) => set("defaultCoverDays", v)} disabled={ro} disabledReason="Only Management can change settings" label="Default cover" options={COVER_OPTIONS.map((c) => ({ value: c, label: `${c}d` }))} />
           </Field>
           <Field label="Plan gap flag" help="Team plan vs system projection difference that gets flagged">

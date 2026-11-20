@@ -181,8 +181,8 @@ const DRIVERS: Driver[] = admin ? [PGLITE, POSTGRES_JS] : [PGLITE];
 const CFG: ZohoConfig = { apiBase: "https://zoho.test", accountsBase: "https://accounts.test", orgId: "ORG1", clientId: "c", clientSecret: "s", refreshToken: "r" };
 
 const ITEMS = [
-  // the Segment custom field (20 Nov 2026) arrives as cf_segment; the cream has none, so its category is read
-  { item_id: "I-SERUM", name: "Hair Serum", sku: "HS-01", rate: 999, purchase_rate: 300, vendor_name: "Acme Labs", category_name: "Hair", status: "active", track_inventory: true, cf_segment: "Night Regime" },
+  // the Type Regimen custom field (20 Nov 2026) arrives as cf_type_regimen; the cream has none, so its category is read
+  { item_id: "I-SERUM", name: "Hair Serum", sku: "HS-01", rate: 999, purchase_rate: 300, vendor_name: "Acme Labs", category_name: "Hair", status: "active", track_inventory: true, cf_type_regimen: "Night Regimen" },
   { item_id: "I-CREAM", name: "Day Cream", sku: "DC-01", rate: 799, purchase_rate: 10, status: "active", track_inventory: true },
   { item_id: "I-PLAN", name: "Skin Plan", sku: "SP-1M", rate: 4999, status: "active", track_inventory: false },
   { item_id: "I-COMBO", name: "Amazon Combo", sku: "AC-1", rate: 1499, status: "active", track_inventory: true },
@@ -309,7 +309,7 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     expect(serum).toMatchObject({ name: "Hair Serum", price: 999, cost: 300, category: "Hair", packSize: 1, launchedOn: "2026-07-09" });
     expect(cream).toMatchObject({ price: 850, cost: 255, launchedOn: "2026-11-03" }); // ₹10 purchase price is a placeholder → 30% of price
     expect(cream.category).toBe("Creams & Moisturizers"); // Zoho has no category for it: the online CRM's
-    expect([serum.segment, serum.costEstimated]).toEqual(["night", false]); // from the Zoho Segment field
+    expect([serum.segment, serum.costEstimated]).toEqual(["night", false]); // from Zoho's Type Regimen field
     expect([cream.segment, cream.costEstimated]).toEqual([null, true]); // no field value, and "Creams" names no segment
     expect(ds.vendors.map((v) => v.name).sort()).toEqual(["Acme Labs", "Vendor not set in Zoho"]);
 
@@ -395,8 +395,12 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
       { name: "Ghost Product", reason: "Linked to a Zoho item that Zoho doesn’t have", unitsSold90d: 0, lastSale: null },
     ]);
     expect(h.zohoOnlyItems).toBe(1); // Amazon Combo (the retired item is inactive)
-    expect(h.lastSync).toHaveLength(6);
-    expect(h.lastSync.every((s) => s.ok && s.at)).toBe(true);
+    expect(h.lastSync).toHaveLength(7);
+    // every sync job ran; the reorder alerts run after the morning sync, so they have not run in this test
+    expect(h.lastSync.filter((s) => s.job !== "Reorder alerts (email / WhatsApp)").every((s) => s.ok && s.at)).toBe(true);
+    expect(h.lastSync.find((s) => s.job === "Reorder alerts (email / WhatsApp)")).toMatchObject({ at: null, note: "Has not run yet" });
+    // no alert settings in the test: both channels say what is missing
+    expect(h.alerts).toMatchObject({ email: false, whatsapp: false, log: [] });
     expect(h.lastSync.map((s) => s.job)).toContain("CRM sales");
 
     // through the wire and into the screens' engine

@@ -61,7 +61,7 @@ interface LogRow {
   type: string;
   channel: "Email" | "WhatsApp";
   to: string;
-  status: "Delivered" | "Read" | "Opened";
+  status: "Delivered" | "Read" | "Opened" | "Sent" | "Failed";
   summary: string;
 }
 
@@ -100,7 +100,20 @@ export default function AlertsPage() {
   const overValue = over.reduce((a, m) => a + m.excess * m.product.cost, 0);
   const first = critical[0];
   const plan = schedulePlan(ds.today, schedule, recipients);
-  const log = sampleLog(ds.today, critical.length, low.length, over.length);
+  const live = ds.health.alerts ?? null;
+  const log: LogRow[] = live
+    ? live.log.map((r) => ({
+        day: r.at.slice(0, 10),
+        time: new Date(r.at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }),
+        type: "Reorder alert",
+        channel: r.channel === "email" ? "Email" : "WhatsApp",
+        to: r.recipients.join(", "),
+        status: r.status === "sent" ? "Sent" : "Failed",
+        summary: r.error ? `${r.summary} · ${r.error}` : r.summary,
+      }))
+    : sampleLog(ds.today, critical.length, low.length, over.length);
+  // the reorder alert: what has reached its regimen's reorder point and how much to order (as the server sends it)
+  const due = [...critical, ...low].filter((m) => m.indentDue && m.indentQty > 0).sort((a, b) => a.cover - b.cover);
 
   return (
     <div>
@@ -113,6 +126,56 @@ export default function AlertsPage() {
           </Button>
         }
       />
+
+      <Card className="mb-3">
+        <CardHeader
+          title="Reorder alert · email and WhatsApp"
+          sub={`Sent every morning after the 07:11 sync when a product reaches its reorder point: Night Regime at ${settings.nightReorderAtDays} days of stock left (order back to ${settings.nightTargetDays} days), Day Regime and Wellness at ${settings.dayReorderAtDays} days (back to ${settings.dayTargetDays}). A product is repeated after ${live?.repeatDays ?? 7} days if it is still due.`}
+        />
+        <div className="mb-3 flex flex-wrap gap-2 text-[12.5px]">
+          {(["email", "whatsapp"] as const).map((ch) => {
+            const ready = live ? live[ch] : false;
+            const missing = live ? live.missing[ch] : [];
+            return (
+              <span key={ch} className={clsx("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1", ready ? "bg-st-healthy-soft text-st-healthy" : "bg-sunken text-ink-2")}>
+                {ch === "email" ? <Mail size={13} aria-hidden /> : <MessageCircle size={13} aria-hidden />}
+                {ch === "email" ? "Email" : "WhatsApp"}:{" "}
+                {!live ? "sample data, nothing is sent" : ready ? "set up" : `not set up yet (missing ${missing.join(", ")})`}
+              </span>
+            );
+          })}
+        </div>
+        {due.length ? (
+          <div className="overflow-x-auto">
+            <table className="dtable">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Regimen rule</th>
+                  <th className="num">Stock</th>
+                  <th className="num">Days left</th>
+                  <th className="num">Order</th>
+                  <th className="num">Value at cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {due.map((m) => (
+                  <tr key={m.product.id}>
+                    <td className="font-medium">{m.product.name}</td>
+                    <td className="text-[12.5px] text-ink-2">{m.rule.label}</td>
+                    <td className="num">{fmtInt(m.stock)}</td>
+                    <td className="num">{fmtDays(m.cover)}</td>
+                    <td className="num font-semibold">{fmtInt(m.indentQty)}</td>
+                    <td className="num">{fmtMoneyShort(m.indentQty * m.product.cost)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-[13px] text-ink-2">Nothing has reached its reorder point today.</p>
+        )}
+      </Card>
 
       <div className="grid gap-3 xl:grid-cols-5">
         <Card className="xl:col-span-2">
@@ -229,7 +292,11 @@ export default function AlertsPage() {
         <div className="p-4 pb-2">
           <CardHeader className="mb-0" title="Sent log · last 14 days" sub="Every email and WhatsApp the panel sends is recorded here with its delivery status" />
           <div className="mt-2">
-            <Note tone="warn">Sample log. Real entries appear once email and WhatsApp are connected.</Note>
+            {live ? (
+              log.length ? null : <Note>No reorder alert has been sent yet.</Note>
+            ) : (
+              <Note tone="warn">Sample log. Real entries appear on live data once email and WhatsApp are set up.</Note>
+            )}
           </div>
         </div>
         <div className="max-h-[480px] overflow-auto scroll-thin">
@@ -259,7 +326,7 @@ export default function AlertsPage() {
                   </td>
                   <td className="whitespace-nowrap">{r.to}</td>
                   <td>
-                    <span className={clsx("rounded-full px-2 py-0.5 text-[11.5px] font-semibold", r.status === "Delivered" ? "bg-sunken text-ink-2" : "bg-st-healthy-soft text-st-healthy")}>{r.status}</span>
+                    <span className={clsx("rounded-full px-2 py-0.5 text-[11.5px] font-semibold", r.status === "Failed" ? "bg-st-critical-soft text-st-critical" : r.status === "Delivered" ? "bg-sunken text-ink-2" : "bg-st-healthy-soft text-st-healthy")}>{r.status}</span>
                   </td>
                   <td className="text-ink-2">{r.summary}</td>
                 </tr>

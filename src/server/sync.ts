@@ -107,10 +107,11 @@ async function zohoCatalog(panel: Db, z: ZohoClient): Promise<JobOutput> {
   if (!items.ok) throw new Error(`Zoho items: ${items.message}`);
   // Day Regime / Night Regime / Wellness (decided 20 Nov 2026): a custom field on each Zoho item. The item list
   // carries custom fields as cf_<api name>, and Zoho makes the api name from the label ("Segment" → cf_segment), so
-  // no extra Zoho call is needed: the field named in setting "zoho.segment_field" (default "Segment"), else any
+  // no extra Zoho call is needed: the field named in setting "zoho.segment_field" (default "Type Regimen", the
+  // field Gleuhr added in Zoho: cf_type_regimen), else any
   // cf_ key with "segment" or "regime" in it. Until the field exists, the item's category is read instead.
   await panel.exec("alter table products add column if not exists segment text");
-  const wanted = "cf_" + (await settingText(panel, "zoho.segment_field", "Segment")).toLowerCase().replace(/^cf_/, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  const wanted = "cf_" + (await settingText(panel, "zoho.segment_field", "Type Regimen")).toLowerCase().replace(/^cf_/, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
   const cfKeys = [...new Set(items.data.flatMap((i) => Object.keys(i).filter((k) => k.startsWith("cf_"))))];
   const segField = cfKeys.includes(wanted) ? wanted : (cfKeys.find((k) => /segment|regime/i.test(k)) ?? null);
   const itemRows = items.data.map((i) => ({
@@ -147,7 +148,7 @@ async function zohoCatalog(panel: Db, z: ZohoClient): Promise<JobOutput> {
   const segN = itemRows.filter((i) => i.segment).length;
   return {
     rows: locRows.length + itemRows.length,
-    note: `${locRows.length} locations, ${itemRows.length} items${goneN ? `; ${goneN} no longer in Zoho` : ""}; segment ${segField ? `from field ${segField}` : "field not in Zoho yet"} (${segN} items set)`,
+    note: `${locRows.length} locations, ${itemRows.length} items${goneN ? `; ${goneN} no longer in Zoho` : ""}; Type Regimen ${segField ? `(${segField}) filled in on ${segN} items` : "empty on every item so far"}`,
   };
 }
 

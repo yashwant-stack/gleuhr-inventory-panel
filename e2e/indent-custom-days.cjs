@@ -14,29 +14,29 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
 
   await p.goto(FILE + '#indent', { waitUntil: 'load' });
   await p.waitForTimeout(500);
-  // Order = rate × (lead + cover) + 90 days safety − stock − on the way (20 Nov 2026): 7 × (15 + 45) + 630 − 150 = 900
-  ok((await serumRow()).includes('900'), 'default (own lead 15, cover 45): Hair Serum 900');
+  // Hair Serum is Night Regime: back to 180 days when it lands, 7 × (15 + 180) − 150 = 1,215 (20 Nov 2026)
+  ok((await serumRow()).includes('1,215'), 'default (own lead 15, own rule: back to 180 days): Hair Serum 1,215');
 
-  // custom cover: 60 days → 7 × (15 + 60) + 630 − 150 = 1,005
+  // custom cover: 60 days → 7 × (15 + 60) − 150 = 375
   await p.getByRole('radiogroup', { name: 'Cover' }).getByRole('radio', { name: 'Custom' }).click();
   const coverBox = p.getByLabel('Cover: custom number of days');
   await coverBox.fill('60');
   await p.waitForTimeout(200);
-  ok((await serumRow()).includes('1,005'), 'custom cover 60 days: Hair Serum 1,005');
+  ok((await serumRow()).includes('375'), 'custom cover 60 days: Hair Serum 375');
   ok((await p.locator('body').innerText()).includes('cover 60 days after arrival'), 'the Units tile says cover 60 days');
 
-  // custom lead: 20 days → 7 × (20 + 60) + 630 − 150 = 1,040
+  // custom lead: 20 days → 7 × (20 + 60) − 150 = 410
   await p.getByRole('radiogroup', { name: 'Lead time' }).getByRole('radio', { name: 'Custom' }).click();
   const leadBox = p.getByLabel('Lead time: custom number of days');
   await leadBox.fill('20');
   await p.waitForTimeout(200);
-  ok((await serumRow()).includes('1,040'), 'custom lead 20 days + cover 60: Hair Serum 1,040');
+  ok((await serumRow()).includes('410'), 'custom lead 20 days + cover 60: Hair Serum 410');
   ok((await p.locator('body').innerText()).includes('arriving in 20 days'), 'the what-if note names 20 days');
 
   // a bad number is flagged and the last good one stays in use
   await leadBox.fill('0');
   await p.waitForTimeout(200);
-  ok((await p.locator('body').innerText()).includes('1 to 365') && (await serumRow()).includes('1,040'), 'lead 0: flagged "1 to 365", still uses 20');
+  ok((await p.locator('body').innerText()).includes('1 to 365') && (await serumRow()).includes('410'), 'lead 0: flagged "1 to 365", still uses 20');
   await leadBox.fill('20');
   await p.screenshot({ path: OUT + '/indent-custom.png' });
 
@@ -45,7 +45,7 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   await p.waitForTimeout(200);
   const leadHeads = await p.locator('thead th').allInnerTexts();
   ok(leadHeads.includes('20 days'), `lead table has a 20-day column: ${leadHeads.filter((h) => /days/.test(h)).join(' · ')}`);
-  await p.getByRole('tab', { name: 'Stock indent 7–90 days' }).click();
+  await p.getByRole('tab', { name: 'Stock indent 7–180 days' }).click();
   await p.waitForTimeout(200);
   const coverHeads = await p.locator('thead th').allInnerTexts();
   ok(coverHeads.includes('60 days'), `cover table has a 60-day column: ${coverHeads.filter((h) => /days/.test(h)).join(' · ')}`);

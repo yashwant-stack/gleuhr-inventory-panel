@@ -253,13 +253,14 @@ export const usePanel = create<PanelState>()(
     }),
     {
       name: "gleuhr-inventory-panel",
-      version: 6,
+      version: 7,
       // v1 stored old-style location ids; v2 starts its filters fresh; v3 replaces the 7/30/90 weights with
       // the 60-day window (the old weights are dropped, the window starts at its default); v4 (17 Nov 2026)
       // orders at 60 days of stock left for 60 days of cover: the old 30-day default cover becomes 60; v5 (19 Nov
       // 2026) has five roles: old roles map to the new ones, the CBO's addresses become Management's, and plans of
       // the retired parts (D2C, clinic) are dropped; v6 (20 Nov 2026) orders at 150 days with 90 safety days for 45
-      // days of cover, overstock above 180 days: settings still at the old defaults move to the new ones.
+      // days of cover, overstock above 180 days: settings still at the old defaults move to the new ones; v7 (20 Nov
+      // 2026, later) adds the per-regimen rules and moves overstock from 180 to 210 days when still at the old default.
       migrate: (persisted, version) => {
         const p = (persisted ?? {}) as {
           settings?: Partial<FormulaSettings> & Record<string, unknown>;
@@ -290,6 +291,7 @@ export const usePanel = create<PanelState>()(
           if (kept.defaultCoverDays === undefined || kept.defaultCoverDays === 60) kept.defaultCoverDays = DEFAULT_FORMULA_SETTINGS.defaultCoverDays;
           if (kept.overstockDays === undefined || kept.overstockDays === 90) kept.overstockDays = DEFAULT_FORMULA_SETTINGS.overstockDays;
         }
+        if (version < 7 && (kept.overstockDays === undefined || kept.overstockDays === 180)) kept.overstockDays = DEFAULT_FORMULA_SETTINGS.overstockDays;
         const settings = { ...DEFAULT_FORMULA_SETTINGS, ...kept };
         return (version < 2 ? { ...p, settings, locations: [], points: [] } : { ...p, settings }) as never;
       },

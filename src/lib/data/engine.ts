@@ -24,8 +24,8 @@ import {
   transferSuggestions,
   type TransferSuggestion,
 } from "../domain/formulas";
-import type { ChannelId, FormulaSettings, Location, LocationKind, Product, PurchaseOrder, Segment, StockStatus } from "../domain/types";
-import { DEFAULT_LEAD_DAYS, PROJECTION_HORIZONS } from "../domain/types";
+import type { ChannelId, FormulaSettings, Location, LocationKind, Product, PurchaseOrder, PurchaseRule, Segment, StockStatus } from "../domain/types";
+import { DEFAULT_LEAD_DAYS, PROJECTION_HORIZONS, purchaseRule } from "../domain/types";
 import { CHANNELS } from "../mock/catalog";
 import { primaryLocation, salesPointId, type Dataset, type Source } from "./model";
 
@@ -362,6 +362,8 @@ export interface ProductMetrics {
   cover: number;
   stockOut: string | null;
   /** Days of stock at which to order: 60, or the lead time when that is longer. */
+  /** The product's purchase rule (from its regimen). */
+  rule: PurchaseRule;
   reorderAt: number;
   reorderPoint: number;
   status: StockStatus;
@@ -416,13 +418,15 @@ export function computeMetrics(ds: Dataset, settings: FormulaSettings, leadOverr
     const cover = daysOfCover(stock, r.rate);
     const out = stockOutDate(parseDay(ds.today), cover);
     const extraFor = (days: number) => (extraFn && days > 0 ? extraFn(pi, ds.today, addDays(ds.today, days - 1)).units : 0);
-    const window = extraFn ? extraFn(pi, ds.today, addDays(ds.today, leadTime + settings.defaultCoverDays - 1)) : { units: 0, parts: [] };
+    // the product's own rule, from its regimen (Night 150 → 180, Day / Wellness 120 → 150, else the general rule)
+    const rule = purchaseRule(p.segment, settings);
+    const window = extraFn ? extraFn(pi, ds.today, addDays(ds.today, leadTime + rule.coverDays - 1)) : { units: 0, parts: [] };
     const indent = indentQuantity({
       rate: r.rate,
       leadTime,
-      coverDays: settings.defaultCoverDays,
-      safetyDays: settings.purchaseSafetyDays,
-      reorderAtDays: settings.reorderAtDays,
+      coverDays: rule.coverDays,
+      safetyDays: rule.safetyDays,
+      reorderAtDays: rule.reorderAtDays,
       stock,
       onOrder,
       packSize: p.packSize,
@@ -450,10 +454,11 @@ export function computeMetrics(ds: Dataset, settings: FormulaSettings, leadOverr
       nextArrivalDays,
       cover,
       stockOut: out ? out.toISOString().slice(0, 10) : null,
-      reorderAt: orderTriggerDays(settings.reorderAtDays, leadTime),
-      reorderPoint: reorderPoint(r.rate, settings.reorderAtDays, leadTime),
-      status: stockStatus({ stock, onOrder, nextArrivalDays, rate: r.rate, leadTime, reorderAtDays: settings.reorderAtDays, overstockDays: settings.overstockDays, extraUnits: window.units }),
-      orderInDays: daysUntilOrder(stock, onOrder, r.rate, settings.reorderAtDays, leadTime, window.units),
+      rule,
+      reorderAt: orderTriggerDays(rule.reorderAtDays, leadTime),
+      reorderPoint: reorderPoint(r.rate, rule.reorderAtDays, leadTime),
+      status: stockStatus({ stock, onOrder, nextArrivalDays, rate: r.rate, leadTime, reorderAtDays: rule.reorderAtDays, overstockDays: settings.overstockDays, extraUnits: window.units }),
+      orderInDays: daysUntilOrder(stock, onOrder, r.rate, rule.reorderAtDays, leadTime, window.units),
       indentQty: indent.qty,
       indentRaw: indent.raw,
       indentDue: indent.due,
@@ -495,7 +500,7 @@ export function locationBreakdown(ds: Dataset, settings: FormulaSettings, pi: nu
       byChannel: r.byChannel,
       cover: daysOfCover(stock, r.rate),
       // the warehouse orders from vendors by the purchase rule; a clinic is topped up below lead + safety days
-      status: stockStatus({ stock, onOrder: 0, nextArrivalDays: null, rate: r.rate, leadTime: lead, reorderAtDays: l.isPrimary ? settings.reorderAtDays : lead + settings.safetyDays, overstockDays: settings.overstockDays }),
+      status: stockStatus({ stock, onOrder: 0, nextArrivalDays: null, rate: r.rate, leadTime: lead, reorderAtDays: l.isPrimary ? m.rule.reorderAtDays : lead + settings.safetyDays, overstockDays: settings.overstockDays }),
     };
   });
 }
@@ -648,6 +653,7 @@ export function inventoryValue(ds: Dataset, products: Product[], bottleValue: nu
     estimatedProducts,
     products: products.length,
     units,
-    bySegment: order.filter((k) => seg.has(k)).map((k) => ({ segment: k, ...seg.get(k)! })),
+    // Day, Night and Wellness always show (₹0 until Zoho's Type Regimen is filled in); "not set" only when it has products
+    bySegment: order.filter((k) => k !== "none" || seg.has(k)).map((k) => ({ segment: k, ...(seg.get(k) ?? { value: 0, units: 0, products: 0 }) })),
   };
 }

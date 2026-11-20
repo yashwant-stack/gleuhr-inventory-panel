@@ -15,6 +15,7 @@ import { parseSegment, type ChannelId, type Location, type Product, type Purchas
 import { CHANNELS } from "../lib/mock/catalog";
 import { type Db, num } from "./db";
 import { istToday } from "./sync";
+import { alertConfig, alertLog } from "./alerts";
 
 const NOT_CONNECTED_NOTE = "Not in the clinic or online CRM, and no Zoho location. Tell us how these orders are recorded to connect them.";
 
@@ -26,6 +27,7 @@ export const JOB_LABELS: Record<string, string> = {
   crm_reference: "CRM clinics and products",
   crm_flows: "CRM sales",
   crm_health: "Stock changes Zoho refused",
+  reorder_alerts: "Reorder alerts (email / WhatsApp)",
 };
 
 function slug(s: string): string {
@@ -333,6 +335,10 @@ export async function buildDataset(db: Db, now = new Date()): Promise<Dataset> {
         ? { job: JOB_LABELS[job]!, at: iso(r.finished_at), ok: Boolean(r.ok), note: String(r.note ?? "") }
         : { job: JOB_LABELS[job]!, at: null, ok: false, note: "Has not run yet" };
     }),
+    alerts: await (async () => {
+      const cfg = alertConfig();
+      return { email: !!cfg.email, whatsapp: !!cfg.whatsapp, missing: cfg.missing, repeatDays: cfg.repeatDays, log: await alertLog(db).catch(() => []) };
+    })(),
   };
 
   const [lastStock] = await db.query<{ at: unknown }>("select max(read_at) as at from stock_levels");

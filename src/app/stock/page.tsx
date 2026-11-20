@@ -72,7 +72,7 @@ function StockHealth() {
     <div>
       <PageHeader
         title="Stock health"
-        sub={`Current stock = Mohali warehouse + every clinic. Status uses the daily sales rate (last ${settings.rateWindowDays} days), each product’s lead time, the ${settings.reorderAtDays}-day reorder point and a ${settings.overstockDays}-day overstock limit.`}
+        sub={`Current stock = Mohali warehouse + every clinic. Status uses the daily sales rate (last ${settings.rateWindowDays} days), each product’s lead time, its regimen’s reorder point (Night Regime ${settings.nightReorderAtDays} days, Day Regime and Wellness ${settings.dayReorderAtDays}, no regimen ${settings.reorderAtDays}) and a ${settings.overstockDays}-day overstock limit.`}
         right={
           <Button
             icon={<Download size={14} />}

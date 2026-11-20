@@ -24,10 +24,10 @@ Use **“Viewing as”** in the top bar to see the panel as each person: Managem
 | Channels | Each channel’s sales, growth and next-30-day forecast; D2C total; clinic-wise sales |
 | Projections | 7 / 15 / 30 / 60 / 90-day projections per product and channel |
 | Stock health | Current stock (warehouse + every clinic), days of cover, Critical / Low / Healthy / Overstock / No sales, clinic transfer suggestions, overstock value |
-| Auto indent | What to order now and how much (rate × (lead + 45 cover) + 90 days safety − stock − on the way, once 150 days are left); “what if stock takes 7–90 days”; stock indent for 15 / 30 / 60 / 90 days; approve (Management); export the purchase list |
+| Auto indent | What to order now and how much, by Zoho's Type Regimen: Night Regime at 150 days left, back to 180 when it lands; Day Regime and Wellness at 120, back to 150 (rate × (lead + target) − stock − on the way); “what if stock takes 7–90 days”; stock indent for 15 / 30 / 60 / 90 days; approve (Management); export the purchase list |
 | Plans | Monthly (23rd → 25th → 26th) and weekly (Thu → Sat → Mon) cycles; who has submitted; plan vs actual; the upload form for each person |
 | Reports | Consolidated projection report for Management (system + trend + team plans, gap flags, stock readiness); the report chain from overall sales down to current stock; Download PDF (print) |
-| Alerts | Today’s stock alert as Management receives it (WhatsApp and email preview), the full schedule, the sent log |
+| Alerts | The daily reorder alert by email (Resend) and WhatsApp (360dialog): every product at its reorder point with how much to order; which channel is set up; the real sent log |
 | Settings | Every threshold (sales window, safety days, overstock limit, cover, gap flag, transfer rules), vendor lead times, recipients, schedule |
 
 Click any product anywhere to open its detail panel, which shows **how every number was worked out**, step by step.

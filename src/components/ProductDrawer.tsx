@@ -167,7 +167,8 @@ export function ProductDrawer() {
                 formula={
                   <>
                     {exactRate(m.rate)} a day × {m.reorderAt} days of stock left
-                    {m.reorderAt > w.reorderAtDays ? ` (the ${m.leadTime}-day lead time, longer than ${w.reorderAtDays} days)` : ""}
+                    {m.reorderAt > m.rule.reorderAtDays ? ` (the ${m.leadTime}-day lead time, longer than ${m.rule.reorderAtDays} days)` : ""}
+                    <span className="block text-muted">{m.rule.label}</span>
                   </>
                 }
                 result={fmtInt(m.reorderPoint)}
@@ -190,10 +191,11 @@ export function ProductDrawer() {
               />
               <Step
                 n={6}
-                title={`Order quantity (cover ${w.defaultCoverDays} days)`}
+                title={m.rule.kind === "general" ? `Order quantity (cover ${m.rule.coverDays} days)` : `Order quantity (back to ${m.rule.coverDays} days when it lands)`}
                 formula={
                   <>
-                    {exactRate(m.rate)} × ({m.leadTime} lead + {w.defaultCoverDays} cover) + {fmtInt(Math.round(m.safety))} safety ({w.purchaseSafetyDays} days)
+                    {exactRate(m.rate)} × ({m.leadTime} lead + {m.rule.coverDays} {m.rule.kind === "general" ? "cover" : "target"})
+                    {m.rule.safetyDays ? ` + ${fmtInt(Math.round(m.safety))} safety (${m.rule.safetyDays} days)` : ""}
                     {m.extraUnits ? ` + ${fmtInt(Math.round(m.extraUnits))} campaign / festival` : ""} − {fmtInt(m.stock)} stock − {fmtInt(m.onOrder)} on the way = {fmtRate(m.indentRaw)}
                     {m.extraParts.length ? <span className="block">{m.extraParts.map((x) => `${x.name}: +${fmtInt(Math.round(x.units))} (${x.pct}% for ${x.days} days)`).join(" · ")}</span> : null}
                     {p.packSize > 1 ? ` → round up to pack of ${p.packSize}` : ""}

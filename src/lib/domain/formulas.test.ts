@@ -15,7 +15,7 @@ import {
   transferSuggestions,
   trendFactor,
 } from "./formulas";
-import { DEFAULT_FORMULA_SETTINGS as S, DEFAULT_LEAD_DAYS } from "./types";
+import { DEFAULT_FORMULA_SETTINGS as S, purchaseRule, DEFAULT_LEAD_DAYS } from "./types";
 
 /** 90 days of Hair Serum: 630 in 90 days, 240 in the last 30, 70 in the last 7 (the worked example). */
 function serumSeries(): number[] {
@@ -74,7 +74,7 @@ describe("worked example · Hair Serum 50 ml", () => {
 describe("the purchase rule (decided 20 Nov 2026): order at 150 days, lead 60, cover 45, safety 90", () => {
   it("defaults", () => {
     expect(DEFAULT_LEAD_DAYS).toBe(60);
-    expect(S).toMatchObject({ reorderAtDays: 150, defaultCoverDays: 45, purchaseSafetyDays: 90, overstockDays: 180 });
+    expect(S).toMatchObject({ reorderAtDays: 150, defaultCoverDays: 45, purchaseSafetyDays: 90, overstockDays: 210 });
   });
   it("20 a day, 3,000 left (150 days), lead 60: order 20 × (60 + 45) + 20 × 90 − 3,000 = 900 (45 days)", () => {
     const r = indentQuantity({ rate: 20, leadTime: 60, coverDays: 45, safetyDays: 90, reorderAtDays: 150, stock: 3000, onOrder: 0, packSize: 1 });
@@ -163,5 +163,32 @@ describe("edge rules", () => {
       7,
     );
     expect(t).toEqual([{ fromId: "A", toId: "B", qty: 11, fromCover: 90, toCover: 3 }]);
+  });
+});
+
+describe("the rules by Type Regimen (decided 20 Nov 2026): keep the stock at the target on the day the order lands", () => {
+  const order = (seg: "night" | "day" | "wellness" | null, rate: number, stock: number, leadTime = 60) => {
+    const r = purchaseRule(seg, S);
+    return indentQuantity({ rate, leadTime, coverDays: r.coverDays, safetyDays: r.safetyDays, reorderAtDays: r.reorderAtDays, stock, onOrder: 0, packSize: 1 });
+  };
+  it("Night Regime: at 150 days left, order 90 days, so it lands back at 180 days", () => {
+    expect(purchaseRule("night", S)).toMatchObject({ reorderAtDays: 150, coverDays: 180, safetyDays: 0 });
+    // 10 a day, 1,500 left, lead 60: 10 × (60 + 180) − 1,500 = 900 = 90 days; it lands with 1,500 − 600 + 900 = 1,800 = 180 days
+    expect(order("night", 10, 1500)).toMatchObject({ qty: 900, due: true });
+    expect(daysOfCover(1500 - 600 + 900, 10)).toBe(180);
+  });
+  it("Night Regime: at 160 days nothing is ordered yet", () => {
+    expect(order("night", 10, 1600)).toMatchObject({ qty: 0, due: false });
+  });
+  it("Day Regime and Wellness: at 120 days left, order 90 days, back to 150 when it lands", () => {
+    for (const seg of ["day", "wellness"] as const) {
+      expect(purchaseRule(seg, S)).toMatchObject({ reorderAtDays: 120, coverDays: 150, safetyDays: 0 });
+      expect(order(seg, 10, 1200)).toMatchObject({ qty: 900, due: true });
+      expect(order(seg, 10, 1300)).toMatchObject({ qty: 0, due: false });
+    }
+  });
+  it("no regimen in Zoho yet: the general rule (150 days, 45 cover + 90 safety)", () => {
+    expect(purchaseRule(null, S)).toMatchObject({ kind: "general", reorderAtDays: 150, coverDays: 45, safetyDays: 90 });
+    expect(order(null, 20, 3000).qty).toBe(900);
   });
 });

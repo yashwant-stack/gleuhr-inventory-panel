@@ -166,13 +166,13 @@ export function eventImpact(
     const rate = rateFor(ds, settings, pi, one.campaign ? campaignPick(one.campaign) : () => true, "used").rate;
     const normal = rate * eventDays;
     const extra = (normal * pct) / 100;
-    const winDays = m.leadTime + settings.defaultCoverDays;
+    const winDays = m.leadTime + m.rule.coverDays;
     const winTo = addDays(ds.today, winDays - 1);
     const mine = eventExtra(ds, settings, pi, ev, ds.today, winTo, { all: true, scenario }).units;
     const mineNow = applied ? eventExtra(ds, settings, pi, ev, ds.today, winTo, { scenario: ownScenario }).units : 0;
     const others = Math.max(0, m.extraFor(winDays) - mineNow);
     const order = (extraUnits: number) =>
-      indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: settings.defaultCoverDays, safetyDays: settings.purchaseSafetyDays, reorderAtDays: settings.reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits }).qty;
+      indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: m.rule.coverDays, safetyDays: m.rule.safetyDays, reorderAtDays: m.rule.reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits }).qty;
     rows.push({ product: m.product, normal, extra, orderWithout: order(others), orderWith: order(others + mine) });
   }
   const totals = rows.reduce<ImpactTotals>(

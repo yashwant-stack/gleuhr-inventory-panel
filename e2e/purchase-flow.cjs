@@ -34,6 +34,7 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   ok(home.includes('Total inventory value') && !home.includes('Sales over time'), 'Purchase: Home shows Total inventory value, Sales over time is gone');
   ok(/Mohali warehouse[\s\S]*Clinics \(\d+\)[\s\S]*Unused bottles/.test(home), 'value split: Mohali warehouse, clinics, unused bottles');
   ok(/Day Regime[\s\S]*Night Regime[\s\S]*Wellness \(edibles\)/.test(home), 'segment split: Day / Night / Wellness');
+  ok(/order at 150 days left, back to 180 days/.test(home) && /order at 120 days left, back to 150 days/.test(home), 'each regimen shows its reorder rule');
   ok(/Mostly an estimate: none of the \d+ products has a real purchase price in Zoho, so they are valued/.test(home), 'says the cost is an estimate where Zoho has no purchase price');
   ok((await nav()).includes('Marketing impact'), 'Purchase: Marketing impact is in the menu');
   await p.locator('main').getByText('Total inventory value').first().scrollIntoViewIfNeeded();
@@ -66,7 +67,7 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   await p.waitForTimeout(200);
 
   const before = await serumOrder();
-  ok(before.includes('900'), 'Auto indent before: Hair Serum 900');
+  ok(before.includes('1,215'), 'Auto indent before: Hair Serum 1,215');
 
   // a campaign on Hair Serum, applied to planning
   await p.goto(FILE + '#marketing-impact'); await p.waitForTimeout(500);
@@ -86,7 +87,7 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   await p.screenshot({ path: OUT + '/marketing-impact-form.png' });
   const addedRow = (await p.getByRole('region', { name: 'Campaign form' }).locator('tr', { hasText: 'Hair Serum' }).innerText()).replace(/\s+/g, ' ');
   const [, without, withIt] = addedRow.match(/([\d,]+) → ([\d,]+)/) ?? [];
-  ok(without === '900' && Number(withIt.replace(/,/g, '')) > 900, `preview: Order now ${without} → ${withIt}`);
+  ok(without === '1,215' && Number(withIt.replace(/,/g, '')) > 1215, `preview: Order now ${without} → ${withIt}`);
   await p.getByRole('button', { name: 'Save and apply to planning' }).click();
   await p.waitForTimeout(400);
   ok((await p.locator('tr', { hasText: 'Hair week' }).innerText()).includes('Applied'), 'the campaign is saved as Applied');
@@ -100,6 +101,13 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   ok((await p.locator('tr', { hasText: 'Hair Serum' }).first().innerText()).includes(withIt), 'Management sees the same raised order');
   await p.goto(FILE + '#marketing-impact'); await p.waitForTimeout(400);
   ok(!(await p.locator('h1').innerText().catch(() => '')).startsWith('Marketing impact'), 'Management cannot open Marketing impact');
+
+  // the reorder alert on the Alerts page: Hair Serum's order includes the applied campaign; nothing is sent from sample data
+  await p.goto(FILE + '#alerts'); await p.waitForTimeout(500);
+  const alerts = await p.locator('main').innerText();
+  ok(alerts.includes('Reorder alert · email and WhatsApp') && alerts.includes('sample data, nothing is sent'), 'Alerts: the reorder alert card, honest about sample data');
+  const serumLine = alerts.split('\n').find((l) => l.startsWith('Hair Serum')) ?? '';
+  ok(serumLine.includes('Night Regime: order at 150 days left') && serumLine.includes(withIt), `Alerts: Hair Serum with its Night Regime rule and the order with the campaign (${withIt})`);
 
   ok(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await b.close();

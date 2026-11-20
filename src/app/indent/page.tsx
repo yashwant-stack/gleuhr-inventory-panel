@@ -87,7 +87,8 @@ export default function IndentPage() {
   const openProduct = usePanel((s) => s.openProduct);
   const [leadChoice, setLeadChoice] = useState<"own" | DaysChoice>("own");
   const [leadCustom, setLeadCustom] = useState("45");
-  const [coverChoice, setCoverChoice] = useState<DaysChoice>((COVER_OPTIONS as readonly number[]).includes(settings.defaultCoverDays) ? settings.defaultCoverDays : "custom");
+  // "own" = each product's purchase rule (Night 180, Day / Wellness 150, no regimen: the general cover)
+  const [coverChoice, setCoverChoice] = useState<"own" | DaysChoice>("own");
   const [coverCustom, setCoverCustom] = useState(String(settings.defaultCoverDays));
   // a custom box that is empty or out of range keeps the last good number, and says so beside the box
   const [lastLead, setLastLead] = useState(45);
@@ -95,7 +96,7 @@ export default function IndentPage() {
   const customLead = validDays(leadCustom) ?? lastLead;
   const customCover = validDays(coverCustom) ?? lastCover;
   const lead: LeadMode = leadChoice === "custom" ? customLead : leadChoice;
-  const cover: number = coverChoice === "custom" ? customCover : coverChoice;
+  const coverMode: number | "own" = coverChoice === "custom" ? customCover : coverChoice;
   const [show, setShow] = useState<Show>("now");
   const [tab, setTab] = useState<Tab>("order");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -105,17 +106,19 @@ export default function IndentPage() {
       .filter((m) => productMatches(m.product, f) && m.rate > 0)
       .map((m) => {
         const L = lead === "own" ? m.leadTime : lead;
-        const extra = m.extraFor(L + cover);
-        const ind = indentQuantity({ rate: m.rate, leadTime: L, coverDays: cover, safetyDays: settings.purchaseSafetyDays, reorderAtDays: settings.reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: extra });
-        const status = stockStatus({ stock: m.stock, onOrder: m.onOrder, nextArrivalDays: m.nextArrivalDays, rate: m.rate, leadTime: L, reorderAtDays: settings.reorderAtDays, overstockDays: settings.overstockDays, extraUnits: extra });
-        const inDays = daysUntilOrder(m.stock, m.onOrder, m.rate, settings.reorderAtDays, L, extra) ?? 0;
+        const C = coverMode === "own" ? m.rule.coverDays : coverMode;
+        const at = m.rule.reorderAtDays;
+        const extra = m.extraFor(L + C);
+        const ind = indentQuantity({ rate: m.rate, leadTime: L, coverDays: C, safetyDays: m.rule.safetyDays, reorderAtDays: at, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: extra });
+        const status = stockStatus({ stock: m.stock, onOrder: m.onOrder, nextArrivalDays: m.nextArrivalDays, rate: m.rate, leadTime: L, reorderAtDays: at, overstockDays: settings.overstockDays, extraUnits: extra });
+        const inDays = daysUntilOrder(m.stock, m.onOrder, m.rate, at, L, extra) ?? 0;
         const orderBy = addDays(ds.today, inDays);
-        const rp = reorderPoint(m.rate, settings.reorderAtDays, L);
-        return { m, L, ind, status, inDays, orderBy, rp, arrives: addDays(orderBy, L), value: ind.qty * m.product.cost };
+        const rp = reorderPoint(m.rate, at, L);
+        return { m, L, C, ind, status, inDays, orderBy, rp, arrives: addDays(orderBy, L), value: ind.qty * m.product.cost };
       })
       .filter((r) => (show === "now" ? r.ind.qty > 0 && (r.status === "critical" || r.status === "low") : true))
       .sort((a, b) => a.inDays - b.inDays || (a.status === "critical" ? -1 : 1) - (b.status === "critical" ? -1 : 1) || b.value - a.value);
-  }, [metrics, f, lead, cover, settings, show, ds.today]);
+  }, [metrics, f, lead, coverMode, settings, show, ds.today]);
 
   const withQty = rows.filter((r) => r.ind.qty > 0);
   const totalValue = withQty.reduce((a, r) => a + r.value, 0);
@@ -154,7 +157,7 @@ export default function IndentPage() {
         r.orderBy,
         r.arrives,
         r.L,
-        cover,
+        r.C,
         r.m.product.cost,
         Math.round(r.value),
         approvals[r.m.product.id] ? "yes" : "no",
@@ -171,7 +174,7 @@ export default function IndentPage() {
     <div>
       <PageHeader
         title="Auto indent"
-        sub={`What to order now and how much. Order = daily rate × (lead time + cover days) + safety stock (${settings.purchaseSafetyDays} days) − current stock − stock on the way (+ campaign and festival units), rounded up to the pack size, once the stock left falls to ${settings.reorderAtDays} days of sales.`}
+        sub={`What to order now and how much, by each product’s Type Regimen in Zoho. Night Regime: order when ${settings.nightReorderAtDays} days of stock are left, enough to be back at ${settings.nightTargetDays} days when it lands. Day Regime and Wellness: at ${settings.dayReorderAtDays} days, back to ${settings.dayTargetDays}. Order = daily rate × (lead time + target days) − current stock − stock on the way (+ campaign and festival units), rounded up to the pack size. No regimen yet: at ${settings.reorderAtDays} days, ${settings.defaultCoverDays} days cover + ${settings.purchaseSafetyDays} days safety stock.`}
         right={
           <>
             <Button icon={<Download size={14} />} onClick={exportList} disabled={IS_PREVIEW} disabledReason={PREVIEW_NO_DOWNLOAD}>
@@ -214,11 +217,12 @@ export default function IndentPage() {
           </div>
           <div>
             <div className="mb-1 text-[12px] font-semibold text-ink-2">Order enough to last (after it arrives)</div>
-            <DaysPicker<never>
+            <DaysPicker<"own">
               label="Cover"
+              extra={[{ value: "own", label: "Each product’s rule" }]}
               options={COVER_OPTIONS}
               value={coverChoice}
-              onChange={(v) => setCoverChoice(v as DaysChoice)}
+              onChange={setCoverChoice}
               custom={coverCustom}
               onCustom={(v) => {
                 setCoverCustom(v);
@@ -241,7 +245,7 @@ export default function IndentPage() {
 
       <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatTile label="Products to order" value={withQty.length} sub={`${urgentCount} critical`} tone={urgentCount ? "critical" : "neutral"} />
-        <StatTile label="Units" value={fmtInt(totalUnits)} sub={`cover ${cover} days after arrival`} />
+        <StatTile label="Units" value={fmtInt(totalUnits)} sub={coverMode === "own" ? "each product’s target after arrival" : `cover ${coverMode} days after arrival`} />
         <StatTile label="Order value at cost" value={fmtMoneyShort(totalValue)} sub={fmtMoney(totalValue)} />
         <StatTile label="Approved" value={`${approvedHere.length} of ${withQty.length}`} sub={approvedHere.length ? "saved in this browser" : "none yet"} tone={approvedHere.length ? "good" : "neutral"} />
       </div>
@@ -255,7 +259,7 @@ export default function IndentPage() {
               { value: "order", label: "Order now", count: withQty.length },
               { value: "vendor", label: "By vendor" },
               { value: "lead", label: "If stock takes 7–90 days" },
-              { value: "cover", label: "Stock indent 7–90 days" },
+              { value: "cover", label: "Stock indent 7–180 days" },
             ]}
           />
         </div>
@@ -390,8 +394,8 @@ export default function IndentPage() {
           </div>
         ) : null}
 
-        {tab === "lead" ? <LeadMatrix rows={matrixRows} cover={cover} extraLead={leadChoice === "custom" ? customLead : null} reorderAtDays={settings.reorderAtDays} safetyDays={settings.purchaseSafetyDays} onOpen={openProduct} /> : null}
-        {tab === "cover" ? <CoverMatrix rows={matrixRows} extraCover={coverChoice === "custom" ? customCover : null} reorderAtDays={settings.reorderAtDays} safetyDays={settings.purchaseSafetyDays} onOpen={openProduct} /> : null}
+        {tab === "lead" ? <LeadMatrix rows={matrixRows} cover={coverMode} extraLead={leadChoice === "custom" ? customLead : null} onOpen={openProduct} /> : null}
+        {tab === "cover" ? <CoverMatrix rows={matrixRows} extraCover={coverChoice === "custom" ? customCover : null} onOpen={openProduct} /> : null}
       </Card>
     </div>
   );
@@ -400,12 +404,12 @@ export default function IndentPage() {
 /** The fixed day columns, plus the custom number when one is chosen (in order, no repeats). */
 const withExtra = (fixed: readonly number[], extra: number | null) => (extra === null || fixed.includes(extra) ? [...fixed] : [...fixed, extra].sort((a, b) => a - b));
 
-function LeadMatrix({ rows, cover, extraLead, reorderAtDays, safetyDays, onOpen }: { rows: ProductMetrics[]; cover: number; extraLead: number | null; reorderAtDays: number; safetyDays: number; onOpen: (id: string) => void }) {
+function LeadMatrix({ rows, cover, extraLead, onOpen }: { rows: ProductMetrics[]; cover: number | "own"; extraLead: number | null; onOpen: (id: string) => void }) {
   const leads = withExtra(LEAD_TIME_OPTIONS, extraLead);
   return (
     <div>
       <p className="px-4 py-3 text-[12.5px] text-ink-2">
-        How much to order now if new stock takes {leads.join(", ")} days to arrive, ordering enough for {cover} days after it lands. An order is due once the stock left falls to {reorderAtDays} days of sales (or to the lead time, when that is longer); “—” = not due yet. Red = days the shelf would be empty before it arrives.
+        How much to order now if new stock takes {leads.join(", ")} days to arrive, ordering enough for {cover === "own" ? "each product’s target" : `${cover} days`} after it lands. An order is due once the stock left falls to the product’s own trigger (see the rules above, or the lead time when that is longer); “—” = not due yet. Red = days the shelf would be empty before it arrives.
       </p>
       <div className="max-h-[600px] overflow-auto scroll-thin">
         <table className="dtable">
@@ -428,7 +432,8 @@ function LeadMatrix({ rows, cover, extraLead, reorderAtDays, safetyDays, onOpen 
                 <td className="num">{fmtInt(m.stock)}</td>
                 <td className="num">{fmtRate(m.rate)}</td>
                 {leads.map((L) => {
-                  const q = indentQuantity({ rate: m.rate, leadTime: L, coverDays: cover, safetyDays, reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: m.extraFor(L + cover) }).qty;
+                  const C = cover === "own" ? m.rule.coverDays : cover;
+                  const q = indentQuantity({ rate: m.rate, leadTime: L, coverDays: C, safetyDays: m.rule.safetyDays, reorderAtDays: m.rule.reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: m.extraFor(L + C) }).qty;
                   const gap = daysWithNoStock(m.stock + m.onOrder, m.rate, L);
                   return (
                     <td key={L} className="num">
@@ -446,12 +451,12 @@ function LeadMatrix({ rows, cover, extraLead, reorderAtDays, safetyDays, onOpen 
   );
 }
 
-function CoverMatrix({ rows, extraCover, reorderAtDays, safetyDays, onOpen }: { rows: ProductMetrics[]; extraCover: number | null; reorderAtDays: number; safetyDays: number; onOpen: (id: string) => void }) {
+function CoverMatrix({ rows, extraCover, onOpen }: { rows: ProductMetrics[]; extraCover: number | null; onOpen: (id: string) => void }) {
   const covers = withExtra(COVER_OPTIONS, extraCover);
   const i90 = covers.indexOf(90);
   return (
     <div>
-      <p className="px-4 py-3 text-[12.5px] text-ink-2">Quantity needed for each cover period, side by side, using each product’s own lead time, so you can choose a short or a long order. “—” = not due yet: the stock left is above {reorderAtDays} days of sales.</p>
+      <p className="px-4 py-3 text-[12.5px] text-ink-2">Quantity needed for each cover period, side by side, using each product’s own lead time, so you can choose a short or a long order. “—” = not due yet: the stock left is above the product’s own trigger (see the rules above).</p>
       <div className="max-h-[600px] overflow-auto scroll-thin">
         <table className="dtable">
           <thead>
@@ -468,7 +473,7 @@ function CoverMatrix({ rows, extraCover, reorderAtDays, safetyDays, onOpen }: { 
           </thead>
           <tbody>
             {rows.map((m) => {
-              const qs = covers.map((c) => indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: c, safetyDays, reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: m.extraFor(m.leadTime + c) }).qty);
+              const qs = covers.map((c) => indentQuantity({ rate: m.rate, leadTime: m.leadTime, coverDays: c, safetyDays: m.rule.safetyDays, reorderAtDays: m.rule.reorderAtDays, stock: m.stock, onOrder: m.onOrder, packSize: m.product.packSize, extraUnits: m.extraFor(m.leadTime + c) }).qty);
               return (
                 <tr key={m.product.id} className="clickable" onClick={() => onOpen(m.product.id)}>
                   <td className="max-w-[230px] truncate font-medium">{m.product.name}</td>

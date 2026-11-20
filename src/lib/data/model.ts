@@ -66,6 +66,17 @@ export interface DataHealth {
   /** Active Zoho items that no CRM sells: not planned here. null = not counted (sample mode). */
   zohoOnlyItems: number | null;
   lastSync: { job: string; at: string | null; ok: boolean; note: string }[];
+  /** Reorder alerts by email / WhatsApp (live only): which channels are set up, and what was sent. */
+  alerts?: AlertsHealth | null;
+}
+
+export interface AlertsHealth {
+  email: boolean;
+  whatsapp: boolean;
+  /** Setting names still missing per channel (Vercel → Settings → Environment Variables). */
+  missing: { email: string[]; whatsapp: string[] };
+  repeatDays: number;
+  log: { at: string; channel: "email" | "whatsapp"; recipients: string[]; status: string; summary: string; error: string | null }[];
 }
 
 export interface LeftOutProduct {
