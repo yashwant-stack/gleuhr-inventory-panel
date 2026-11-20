@@ -84,7 +84,7 @@ export async function buildDataset(db: Db, now = new Date()): Promise<Dataset> {
   }));
   const primary = locations.find((l) => l.isPrimary) ?? locations[0];
   if (!primary || locRows.some((l) => !l.checked_at)) {
-    throw new NotReady("No stock yet: the first stock read from Zoho has not reached every location. It runs every 2 hours; try again after it.");
+    throw new NotReady("No stock yet: the first stock read from Zoho has not reached every location. It runs every day at 9:00 AM, or press “Sync from Zoho now”.");
   }
 
   const clinicRows = await db.query<Record<string, unknown>>("select * from crm_clinics order by crm_clinic_id");
@@ -138,7 +138,7 @@ export async function buildDataset(db: Db, now = new Date()): Promise<Dataset> {
     planned.set(l.zoho_item_id!, list);
   }
   leftOutProducts.sort((a, b) => b.unitsSold90d - a.unitsSold90d || a.name.localeCompare(b.name));
-  if (!links.length) throw new NotReady("No sales yet: the first sync from the CRM database has not finished. It runs every 2 hours; try again after it.");
+  if (!links.length) throw new NotReady("No sales yet: the first sync from the CRM database has not finished. It runs every day at 9:00 AM, or press “Sync from Zoho now”.");
 
   const prodRows = planned.size
     ? await db.query<Record<string, unknown>>("select * from products where zoho_item_id in (select jsonb_array_elements_text($1::text::jsonb)) order by name", [

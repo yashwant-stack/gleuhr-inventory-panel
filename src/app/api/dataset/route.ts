@@ -11,12 +11,14 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 /** The panel's data (stock from Zoho, sales from the CRMs), for people holding the access key. */
-export async function GET() {
+export async function GET(req: Request) {
   if (!accessConfigured()) return NextResponse.json({ error: "The panel’s access key is not set up on the server yet." }, { status: 503 });
   const jar = await cookies();
   if (!hasAccess(jar.get(ACCESS_COOKIE)?.value)) return NextResponse.json({ error: "Access key needed." }, { status: 401 });
   try {
-    return NextResponse.json(await cachedDataset(panelDb()), { headers: { "cache-control": "no-store" } });
+    // ?fresh=1 after "Sync from Zoho now": rebuild instead of serving what this instance built before the sync
+    const fresh = new URL(req.url).searchParams.get("fresh") === "1";
+    return NextResponse.json(await cachedDataset(panelDb(), Date.now(), fresh), { headers: { "cache-control": "no-store" } });
   } catch (e) {
     const known = e instanceof NotConfigured || e instanceof NotReady;
     const message = known ? (e as Error).message : "The panel’s data could not be read. Try again in a minute.";

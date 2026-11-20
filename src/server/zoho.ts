@@ -5,7 +5,7 @@ import "server-only";
 // by plan). The panel keeps its own, much smaller ceilings — settings zoho.max_calls_per_minute
 // (10) and zoho.max_calls_per_day (600), counted in its own database. A full minute makes the
 // panel wait for the next one; the daily ceiling, the run's time budget or a 429 from Zoho stop
-// the run. A 2-hourly refresh is ~13 calls (1 location list + 1 item list + 1 per readable location).
+// the run. A daily full sync is ~18 calls (1 location list + 1 item list + 1 per readable location).
 //
 // What was verified against the live org on 14–15 Nov 2026:
 //  - GET /locations lists all 16 locations.

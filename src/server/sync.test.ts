@@ -13,7 +13,7 @@ import { type CrmSource, plainZohoError, sqlCrm } from "./crm";
 import { postgrestFetcher, restCrm, type RowFetcher } from "./crm-rest";
 import { buildDataset, NotReady } from "./dataset";
 import { postgresDb, type Db } from "./db";
-import { DAILY_JOBS, FREQUENT_JOBS, runSync, SyncBusy, type JobResult, type SyncDeps } from "./sync";
+import { DAILY_JOBS, FREQUENT_JOBS, restJobs, runLeftWork, runSync, SyncBusy, type JobResult, type SyncDeps } from "./sync";
 import { rowStock, type ZohoConfig } from "./zoho";
 
 const MIGRATION = readFileSync(path.resolve(__dirname, "../../supabase/migrations/20261115000001_panel_init.sql"), "utf8");
@@ -442,6 +442,29 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     const minutes = await panel.query<{ calls: number }>("select calls from zoho_calls");
     expect(Math.max(...minutes.map((r) => r.calls))).toBeLessThanOrEqual(3);
     await expect(buildDataset(panel, NOW)).resolves.toBeTruthy();
+  });
+
+  it("a run that ran out of Zoho calls is finished by the catch-up, which reads only the locations it missed", async () => {
+    const panel = await panelDb();
+    const { db: crm } = await crmDb();
+    await panel.exec(`update settings set value = '4' where key = 'zoho.max_calls_per_day'`);
+    const c = handClock();
+    const first = await runSync([...FREQUENT_JOBS, ...DAILY_JOBS], { panel, crm, zohoCfg: CFG, fetchFn: fakeZoho().fetchFn, now: NOW, clock: c.clock, sleep: c.sleep });
+    expect(runLeftWork(first)).toBe(true);
+    await panel.exec(`update settings set value = '600' where key = 'zoho.max_calls_per_day'`);
+    // the catch-up (same day): the access check is still due, and stock only where the first run did not reach
+    expect(await restJobs(panel, NOW)).toEqual(["zoho_stock", "zoho_access"]);
+    const z = fakeZoho();
+    const rest = await runSync(await restJobs(panel, NOW), { panel, crm, zohoCfg: CFG, fetchFn: z.fetchFn, now: NOW, clock: c.clock, sleep: c.sleep, stockSince: NOW });
+    expect(z.calls.filter((x) => x.startsWith("items@"))).toEqual(["items@Z-LDH", "items@Z-MUM"]);
+    expect(byJob(rest, "zoho_stock").note).toMatch(/^catch-up: 1 more location read; refused: Mumbai/);
+    expect(runLeftWork(rest)).toBe(false);
+    await expect(buildDataset(panel, NOW)).resolves.toBeTruthy();
+    // a second catch-up has nothing left to read: no Zoho call at all, and the access check is not repeated
+    expect(await restJobs(panel, NOW)).toEqual(["zoho_stock"]);
+    const z2 = fakeZoho();
+    await runSync(["zoho_stock"], { panel, crm, zohoCfg: CFG, fetchFn: z2.fetchFn, now: NOW, clock: c.clock, sleep: c.sleep, stockSince: NOW });
+    expect(z2.calls.filter((x) => x.startsWith("items@"))).toEqual([]);
   });
 
   it("stops at the daily allowance, keeps what it read, and reads the stalest locations first next time", async () => {

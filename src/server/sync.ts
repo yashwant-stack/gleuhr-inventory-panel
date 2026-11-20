@@ -22,9 +22,27 @@ import {
 
 export type JobName = "crm_reference" | "zoho_catalog" | "zoho_stock" | "crm_flows" | "crm_health" | "zoho_access";
 
-/** The 2-hourly run. zoho_access (a few extra calls) runs once a day. */
-export const FREQUENT_JOBS: JobName[] = ["zoho_catalog", "crm_reference", "zoho_stock", "crm_flows", "crm_health"];
+/** The full sync runs once a day at 9:00 AM IST (vercel.json) or by hand ("Sync from Zoho now"), with zoho_access. */
+// Order matters (20 Nov 2026): the CRM steps make no Zoho calls and are quick, so they run first; Zoho stock runs
+// last, inside the run's time budget, and a location not reached is read by the catch-up (REST_JOBS).
+export const FREQUENT_JOBS: JobName[] = ["zoho_catalog", "crm_reference", "crm_flows", "crm_health", "zoho_stock"];
 export const DAILY_JOBS: JobName[] = ["zoho_access"];
+/** The catch-up after a full sync: stock at the locations it did not reach (deps.stockSince), then the access check. */
+export const REST_JOBS: JobName[] = ["zoho_stock", "zoho_access"];
+
+/** The catch-up's jobs: stock always (it only reads what is missing), the access check unless it already passed today. */
+export async function restJobs(panel: Db, now = new Date()): Promise<JobName[]> {
+  const [done] = await panel.query<{ n: number }>(
+    "select count(*)::int as n from sync_runs where job = 'zoho_access' and ok and finished_at >= ($1::date::timestamp - interval '5 hours 30 minutes')",
+    [istToday(now)],
+  );
+  return (done?.n ?? 0) > 0 ? ["zoho_stock"] : REST_JOBS;
+}
+
+/** true when a run ran out of time before reading every location, or before the access check. */
+export function runLeftWork(results: JobResult[]): boolean {
+  return results.some((r) => (r.job === "zoho_stock" && /left for the next run/.test(r.note)) || (r.job === "zoho_access" && r.skipped && /time is up/.test(r.note)));
+}
 
 const NEEDS: Record<JobName, { zoho?: boolean; crm?: boolean }> = {
   crm_reference: { crm: true },
@@ -55,6 +73,8 @@ export interface SyncDeps {
   sleep?: (ms: number) => Promise<void>;
   /** No Zoho call starts after this moment (epoch ms). */
   deadline?: number;
+  /** Catch-up runs: stock is read only at locations not read since this moment. */
+  stockSince?: Date;
 }
 
 interface JobOutput {
@@ -152,14 +172,16 @@ async function zohoCatalog(panel: Db, z: ZohoClient): Promise<JobOutput> {
   };
 }
 
-async function zohoStock(panel: Db, z: ZohoClient, now: Date): Promise<JobOutput> {
+async function zohoStock(panel: Db, z: ZohoClient, now: Date, since?: Date): Promise<JobOutput> {
   // Oldest first, so a run cut short by time never starves the same locations. A location Zoho
-  // refused is tried again only once a day (each try costs a call).
+  // refused is tried again only once a day (each try costs a call). A catch-up run (`since`) reads only
+  // the locations the full sync did not reach.
   const locs = await panel.query<{ zoho_location_id: string; name: string }>(
     `select zoho_location_id, name from locations
      where active and (readable or checked_at is null or checked_at < $1::timestamptz)
+       and ($2::timestamptz is null or checked_at is null or checked_at < $2::timestamptz)
      order by checked_at asc nulls first, is_primary desc, name`,
-    [new Date(now.getTime() - 24 * 3_600_000).toISOString()],
+    [new Date(now.getTime() - 24 * 3_600_000).toISOString(), since ? since.toISOString() : null],
   );
   const [{ total = 0 } = {}] = await panel.query<{ total: number }>("select count(*)::int as total from locations where active");
   if (!total) throw new Error("No locations yet: run zoho_catalog first");
@@ -206,9 +228,10 @@ async function zohoStock(panel: Db, z: ZohoClient, now: Date): Promise<JobOutput
      on conflict (day, zoho_item_id, zoho_location_id) do update set qty = excluded.qty`,
     [istToday(now)],
   );
-  const skipped = total - locs.length;
+  // a catch-up run only sees the locations the full sync missed: "refused earlier" is the full sync's to say
+  const skipped = since ? 0 : total - locs.length;
   const left = locs.length - read - refused.length;
-  const parts = [`${read} locations read`];
+  const parts = [since ? `catch-up: ${read} more location${read === 1 ? "" : "s"} read` : `${read} locations read`];
   if (refused.length) parts.push(`refused: ${refused.join(", ")}`);
   if (skipped) parts.push(`${skipped} refused earlier, tried again tomorrow`);
   if (left) parts.push(`${left} left for the next run (${stop})`);
@@ -389,7 +412,7 @@ async function runJobs(jobs: JobName[], deps: SyncDeps): Promise<JobResult[]> {
     try {
       const r =
         job === "zoho_catalog" ? await zohoCatalog(deps.panel, zoho!)
-        : job === "zoho_stock" ? await zohoStock(deps.panel, zoho!, now)
+        : job === "zoho_stock" ? await zohoStock(deps.panel, zoho!, now, deps.stockSince)
         : job === "zoho_access" ? await zohoAccess(deps.panel, zoho!)
         : job === "crm_reference" ? await crmReference(deps.panel, deps.crm!)
         : job === "crm_flows" ? await crmFlows(deps.panel, deps.crm!, now)

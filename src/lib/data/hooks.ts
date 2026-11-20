@@ -17,6 +17,9 @@ const LIVE = typeof process !== "undefined" && process.env.NEXT_PUBLIC_DATA_SOUR
 
 const DatasetContext = createContext<Dataset | null>(null);
 
+/** Set by the "Sync from Zoho now" button before it reloads the page. */
+export const FRESH_FLAG = "panel.freshData";
+
 /** Loads the data once and shows loading / failure / the access key form honestly; children only render with real data in hand. */
 export function DatasetProvider({ children, initial }: { children: ReactNode; initial?: Dataset }) {
   // `initial`: data already in hand (the public live-snapshot page, opened with the access key).
@@ -25,7 +28,15 @@ export function DatasetProvider({ children, initial }: { children: ReactNode; in
   useEffect(() => {
     if (!LIVE || initial) return;
     let alive = true;
-    fetch("/api/dataset", { cache: "no-store" })
+    // right after "Sync from Zoho now" the page reloads with this flag: ask the server for freshly built data once
+    let fresh = false;
+    try {
+      fresh = sessionStorage.getItem(FRESH_FLAG) === "1";
+      sessionStorage.removeItem(FRESH_FLAG);
+    } catch {
+      // storage blocked: the normal (at most 15-minute-old) data is fine
+    }
+    fetch(fresh ? "/api/dataset?fresh=1" : "/api/dataset", { cache: "no-store" })
       .then(async (r) => {
         if (r.status === 401) return "locked" as const;
         const body = (await r.json().catch(() => null)) as (DatasetWire & { error?: string }) | null;

@@ -1,6 +1,7 @@
 {
+  "regions": ["bom1"],
   "crons": [
-    { "path": "/api/cron/sync?run=frequent", "schedule": "17 */2 * * *" },
-    { "path": "/api/cron/sync?run=daily", "schedule": "41 1 * * *" }
+    { "path": "/api/cron/sync?run=all", "schedule": "30 3 * * *" },
+    { "path": "/api/cron/sync?run=rest", "schedule": "40 3 * * *" }
   ]
 }

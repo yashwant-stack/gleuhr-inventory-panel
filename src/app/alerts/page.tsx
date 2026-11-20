@@ -130,7 +130,7 @@ export default function AlertsPage() {
       <Card className="mb-3">
         <CardHeader
           title="Reorder alert · email and WhatsApp"
-          sub={`Sent every morning after the 07:11 sync when a product reaches its reorder point: Night Regime at ${settings.nightReorderAtDays} days of stock left (order back to ${settings.nightTargetDays} days), Day Regime and Wellness at ${settings.dayReorderAtDays} days (back to ${settings.dayTargetDays}). A product is repeated after ${live?.repeatDays ?? 7} days if it is still due.`}
+          sub={`Sent every morning after the 9:00 AM sync when a product reaches its reorder point: Night Regime at ${settings.nightReorderAtDays} days of stock left (order back to ${settings.nightTargetDays} days), Day Regime and Wellness at ${settings.dayReorderAtDays} days (back to ${settings.dayTargetDays}). A product is repeated after ${live?.repeatDays ?? 7} days if it is still due.`}
         />
         <div className="mb-3 flex flex-wrap gap-2 text-[12.5px]">
           {(["email", "whatsapp"] as const).map((ch) => {

@@ -12,6 +12,7 @@ import {
   Lock,
   Megaphone,
   Menu,
+  RefreshCw,
   Settings,
   ShoppingBag,
   Store,
@@ -23,13 +24,15 @@ import { usePathname } from "next/navigation";
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { IS_SNAPSHOT } from "@/lib/platform";
 import { Tooltips } from "./Tooltips";
-import { useDataset, useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
+import { FRESH_FLAG, useDataset, useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
 import { cycleState } from "@/lib/data/plans";
 import { CYCLES } from "@/lib/mock/plans";
 import { canOpen, inNav, PLAN_PARTS, ROLES, type RoleId } from "@/lib/roles";
 import { usePanel } from "@/lib/state/store";
 import { ProductDrawer } from "./ProductDrawer";
 import { Select } from "./Select";
+import { toast } from "./Toast";
+import { Button } from "./ui";
 import { Toaster } from "./Toast";
 
 const NAV = [
@@ -163,7 +166,70 @@ function DataBadge() {
         {IS_SNAPSHOT ? "Live data · snapshot" : "Live"}
       </span>
       <span className="hidden text-[12px] text-muted sm:inline">Synced {at}</span>
+      {IS_SNAPSHOT ? null : <SyncButton />}
     </>
+  );
+}
+
+/**
+ * "Sync from Zoho now" (decided 20 Nov 2026): the full sync the 9:00 AM schedule runs, by hand. Management and
+ * Purchase only; the server refuses a second one within 15 minutes, to protect the Zoho call limit.
+ */
+function SyncButton() {
+  const role = useRole();
+  const [busy, setBusy] = useState(false);
+  const [part, setPart] = useState(1);
+  const allowed = role.id === "management" || role.id === "purchase";
+  const run = async () => {
+    setBusy(true);
+    setPart(1);
+    try {
+      type Answer = { ok?: boolean; more?: boolean; startedAt?: string; zohoCalls?: number; error?: string };
+      const call = async (url: string) => {
+        const r = await fetch(url, { method: "POST" });
+        return { status: r.status, body: (await r.json().catch(() => ({}))) as Answer };
+      };
+      let { status, body } = await call("/api/sync");
+      if (status !== 200) {
+        toast(body.error ?? `The sync did not run (the server answered ${status}).`);
+        return;
+      }
+      // a run that ran out of time is continued: only the locations it did not reach are read (at most 3 more times)
+      let calls = body.zohoCalls ?? 0;
+      let ok = body.ok ?? false;
+      for (let i = 0; body.more && body.startedAt && i < 3; i++) {
+        setPart(i + 2);
+        ({ status, body } = await call(`/api/sync?continue=${encodeURIComponent(body.startedAt)}`));
+        if (status !== 200) {
+          ok = false;
+          break;
+        }
+        calls += body.zohoCalls ?? 0;
+        ok = ok && (body.ok ?? false);
+      }
+      toast(`${ok ? "Synced" : "Synced with some problems (see Data health)"} · ${calls} Zoho calls. Loading the new data…`);
+      try {
+        sessionStorage.setItem(FRESH_FLAG, "1");
+      } catch {
+        // storage blocked: the page still reloads, with data at most 15 minutes old
+      }
+      window.setTimeout(() => window.location.reload(), 1200);
+    } catch {
+      toast("The sync could not be reached. Check the connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Button
+      size="sm"
+      icon={<RefreshCw size={13} className={busy ? "animate-spin" : undefined} aria-hidden />}
+      disabled={busy || !allowed}
+      disabledReason={busy ? "Syncing: this takes 2–4 minutes. Keep this page open." : "Management and Purchase can start a Zoho sync."}
+      onClick={run}
+    >
+      {busy ? (part > 1 ? `Syncing… part ${part}` : "Syncing…") : "Sync from Zoho now"}
+    </Button>
   );
 }
 

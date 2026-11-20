@@ -30,6 +30,8 @@ Use **“Viewing as”** in the top bar to see the panel as each person: Managem
 | Alerts | The daily reorder alert by email (Resend) and WhatsApp (360dialog): every product at its reorder point with how much to order; which channel is set up; the real sent log |
 | Settings | Every threshold (sales window, safety days, overstock limit, cover, gap flag, transfer rules), vendor lead times, recipients, schedule |
 
+Live data is synced once a day at 9:00 AM IST (stock from Zoho, sales from the CRMs, then the reorder alerts). Management and Purchase can also press **Sync from Zoho now** in the top bar (not within 15 minutes of the last sync, to protect the Zoho call limit).
+
 Click any product anywhere to open its detail panel, which shows **how every number was worked out**, step by step.
 
 ## Where things live

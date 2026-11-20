@@ -5,7 +5,7 @@ import "server-only";
 // and how much (back to 180 / 150 days when it lands). Same services as the clinic CRM: Resend for email, 360dialog
 // for WhatsApp. A product is not repeated for ALERT_REPEAT_DAYS (default 7) while it stays due.
 //
-// Sent from the daily sync (vercel.json, 07:11 IST), or by hand with /api/cron/sync?run=alerts.
+// Sent from the daily sync (vercel.json, 9:00 AM IST), or by hand with /api/cron/sync?run=alerts.
 // The numbers are the server's: default settings (Settings changes made in a browser stay in that browser for now)
 // and no campaign or festival units (those are saved in the browser too).
 

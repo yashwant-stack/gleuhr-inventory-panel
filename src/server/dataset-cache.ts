@@ -10,9 +10,10 @@ const MAX_AGE_MS = 15 * 60_000;
 // kept on globalThis: Next.js loads the start-up hook and the routes as separate module copies in one process
 const g = globalThis as unknown as { __panelDataset?: { at: number; wire: Promise<DatasetWire> } | null };
 
-export function cachedDataset(db: Db, now = Date.now()): Promise<DatasetWire> {
+export function cachedDataset(db: Db, now = Date.now(), fresh = false): Promise<DatasetWire> {
   const cached = g.__panelDataset;
-  if (cached && now - cached.at < MAX_AGE_MS) return cached.wire;
+  // `fresh`: right after a sync by hand, this server instance may still hold the data from before it
+  if (!fresh && cached && now - cached.at < MAX_AGE_MS) return cached.wire;
   const wire = buildDataset(db).then(encodeDataset);
   g.__panelDataset = { at: now, wire };
   // a failed build is not kept: the next request tries again

@@ -145,7 +145,7 @@ def architecture():
     # vercel
     rrect(d, 0, 186, W, 116, fill=BONE, stroke=LINE)
     d.add(String(8, 289, "Vercel · Next.js app (project gleuhr-inventory-panel)", fontName="DVB", fontSize=8.6, fillColor=INK))
-    d.add(String(W - 8, 289, "Vercel Cron: every 2 h at :17 · daily 01:41 UTC", fontName="DV", fontSize=7.2, fillColor=INK2, textAnchor="end"))
+    d.add(String(W - 8, 289, "Vercel Cron: daily 9:00 AM IST · or Sync now", fontName="DV", fontSize=7.2, fillColor=INK2, textAnchor="end"))
     bw = (W - 16 - 2 * 8) / 3
     xs = [8, 8 + bw + 8, 8 + 2 * (bw + 8)]
     box(d, xs[0], 194, bw, 84, "/api/cron/sync · the sync",
@@ -254,7 +254,7 @@ def calc_flow():
 
 def ops_flow():
     steps = [
-        ("Sync (every 2 hours)", "Stock from Zoho, sales from the CRM, open POs (daily)."),
+        ("Sync (daily 9:00 AM, or Sync now)", "Stock from Zoho, sales from the CRM, open POs, then reorder alerts."),
         ("Home · Products that need action", "Critical and Low first; order for 7/15/30/60/90 days."),
         ("Auto indent", "Quantity, order-by date, arrival date and value at cost for every due product."),
         ("Management approves", "Marks the lines agreed. Nothing is sent to Zoho."),
@@ -268,7 +268,7 @@ def ops_flow():
 
 def sync_flow():
     steps = [
-        ("Vercel Cron", "every 2 h at :17 (frequent) · 01:41 UTC (daily)"),
+        ("Vercel Cron", "daily 03:30 UTC (9:00 AM IST), run=all"),
         ("/api/cron/sync", "checks CRON_SECRET; takes the sync lock so two runs never overlap"),
         ("Jobs, in order", "frequent: 5 jobs · daily: Zoho access + open POs (table below)"),
         ("Time budget", "no Zoho call starts after 250 s; what is not read is read next run"),
@@ -385,12 +385,12 @@ S += [P("4 · Data flow: the sync", "h1"),
       sync_flow(), Spacer(1, 8),
       P("The jobs", "h2"),
       table([["Job", "Reads", "Writes (inventory_panel)", "When"],
-             ["zoho_catalog", "Zoho locations and items (197)", "locations, products", "every 2 h"],
-             ["crm_reference", "CRM clinics and retail products, and each product's Zoho item link", "crm_clinics, crm_products", "every 2 h"],
-             ["zoho_stock", "Stock per item per location. Oldest-read location first; a location Zoho refuses is retried once a day", "stock_levels, stock_snapshots (one stock photo a day)", "every 2 h"],
-             ["crm_flows", "CRM stock movements with their bills and orders: the last 3 days each run (first run: 180 days)", "stage_* (working copies), daily_flows", "every 2 h"],
-             ["crm_health", "CRM stock changes that Zoho refused (last 30 days)", "push_health", "every 2 h"],
-             ["zoho_access", "Which Zoho areas the login can read; open purchase orders with their lines and dates", "zoho_access, purchase_orders", "daily 01:41 UTC (07:11 IST)"]],
+             ["zoho_catalog", "Zoho locations and items (197)", "locations, products", "daily 9:00 AM"],
+             ["crm_reference", "CRM clinics and retail products, and each product's Zoho item link", "crm_clinics, crm_products", "daily 9:00 AM"],
+             ["zoho_stock", "Stock per item per location. Oldest-read location first; a location Zoho refuses is retried once a day", "stock_levels, stock_snapshots (one stock photo a day)", "daily 9:00 AM"],
+             ["crm_flows", "CRM stock movements with their bills and orders: the last 3 days each run (first run: 180 days)", "stage_* (working copies), daily_flows", "daily 9:00 AM"],
+             ["crm_health", "CRM stock changes that Zoho refused (last 30 days)", "push_health", "daily 9:00 AM"],
+             ["zoho_access", "Which Zoho areas the login can read; open purchase orders with their lines and dates", "zoho_access, purchase_orders", "daily 9:00 AM"]],
             [28 * mm, 64 * mm, 48 * mm, CW - 140 * mm], zebra=True),
       P("Every run writes one row per job to <b>sync_runs</b> (rows written, Zoho calls, ok or not, and a note that carries any error), shown on Data health as “Last syncs”. "
         "A lock (sync_lock) stops two runs overlapping; the Zoho token is cached in zoho_token and every call is counted in zoho_calls.", "note")]
@@ -498,7 +498,7 @@ S += [P("9 · Operating flow: who does what", "h1"),
              ["Sales head", "Planner", "Submit the sales plan: each channel, and the clinics clinic by clinic; confirm the stock warnings and the MD's approval"],
              ["Purchase", "Viewer: every page, no changes", "Follow Auto indent; raise the purchase order in Zoho for approved lines"],
              ["Supply chain head", "Viewer: every page, no changes", "Follow stock health and the transfers between Mohali and the clinics"],
-             ["Vercel Cron", "System", "Run the sync every 2 hours and the daily check"]],
+             ["Vercel Cron", "System", "Run the full sync and the reorder alerts every day at 9:00 AM"]],
             [32 * mm, 52 * mm, CW - 84 * mm], zebra=True),
       Spacer(1, 4),
       P("Planners see Home, Sales, Channels, Projections, Stock health and Plans. Auto indent, Reports, Alerts, Settings and Data health are for Management, Purchase and the Supply chain head.", "small")]
@@ -562,7 +562,7 @@ S += [P("12 · Where the code lives", "h1"),
              ["src/app/api/*", "cron/sync, dataset, unlock."],
              ["supabase/functions/inventory-panel-sql", "The gateway function in the CRM project."],
              ["supabase/inventory_panel_setup.sql · migrations/", "The role, the schema and the panel's tables."],
-             ["vercel.json", "The two schedules (every 2 h at :17, daily 01:41 UTC)."],
+             ["vercel.json", "Daily 03:30 UTC (9:00 AM IST) full sync, 03:40 catch-up + alerts; functions in Mumbai (bom1)."],
              ["preview/", "The one-file snapshot page and its encryption."],
              ["src/**/*.test.ts · e2e/", "63 unit tests (formulas with your examples, sync, gateway, glossary) and browser checks."],
              ["docs/BACKEND_PLAN.md", "The data rules in full, each one tested."]],

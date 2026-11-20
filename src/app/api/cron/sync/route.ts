@@ -4,7 +4,7 @@ import { buildDataset } from "@/server/dataset";
 import { refreshDataset } from "@/server/dataset-cache";
 import { panelDb } from "@/server/db";
 import { crmSource } from "@/server/sources";
-import { DAILY_JOBS, FREQUENT_JOBS, runSync, SyncBusy, type JobName } from "@/server/sync";
+import { DAILY_JOBS, FREQUENT_JOBS, restJobs, runSync, SyncBusy, type JobName } from "@/server/sync";
 import { zohoConfig } from "@/server/zoho";
 
 export const runtime = "nodejs";
@@ -13,7 +13,10 @@ export const maxDuration = 300;
 
 /**
  * Scheduled sync (vercel.json crons). Vercel sends "Authorization: Bearer <CRON_SECRET>".
- * ?run=frequent (default, every 2 hours) · ?run=daily (Zoho access + purchase orders, then the reorder alerts)
+ * Scheduled once a day (decided 20 Nov 2026, to keep Zoho calls low, ~18 a day): 9:00 AM IST ?run=all (every job,
+ * Zoho stock last inside the time budget), then 9:10 ?run=rest (stock at any location the 9:00 run did not reach,
+ * the access check if it was missed, then the reorder alerts on the complete data).
+ * Also: ?run=frequent · ?run=daily · ?run=alerts (only the alerts)
  * · ?run=all · ?run=alerts (only the reorder alerts, on the data already synced)
  */
 export async function GET(req: Request) {
@@ -22,18 +25,29 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Not allowed." }, { status: 401 });
   }
   const run = new URL(req.url).searchParams.get("run") ?? "frequent";
-  const jobs: JobName[] = run === "alerts" ? [] : run === "daily" ? DAILY_JOBS : run === "all" ? [...FREQUENT_JOBS, ...DAILY_JOBS] : FREQUENT_JOBS;
+  const jobs: JobName[] = run === "alerts" || run === "rest" ? [] : run === "daily" ? DAILY_JOBS : run === "all" ? [...FREQUENT_JOBS, ...DAILY_JOBS] : FREQUENT_JOBS;
   try {
     const panel = panelDb();
     if (run === "alerts") return NextResponse.json({ ok: true, alerts: await runAlerts(panel) });
+    if (run === "rest") {
+      const results = await runSync(await restJobs(panel), {
+        panel,
+        crm: crmSource(),
+        zohoCfg: zohoConfig(),
+        deadline: Date.now() + 200_000,
+        stockSince: new Date(Date.now() - 20 * 60_000),
+      });
+      refreshDataset(panel);
+      return NextResponse.json({ ok: results.every((r) => r.ok || r.skipped), results, alerts: await runAlerts(panel) });
+    }
     const crm = crmSource();
     // No Zoho call starts after the time budget (default 250 s, inside maxDuration 300 s), so the run
     // finishes and logs itself. On a plan that allows less time per run, set SYNC_TIME_BUDGET_SECONDS.
     const budget = Number(process.env.SYNC_TIME_BUDGET_SECONDS) > 0 ? Number(process.env.SYNC_TIME_BUDGET_SECONDS) : 250;
     const results = await runSync(jobs, { panel, crm, zohoCfg: zohoConfig(), deadline: Date.now() + budget * 1000 });
     refreshDataset(panel); // the screens get the new data at once
-    // once a day, after the morning sync: tell Purchase and Management what has reached its reorder point
-    const alerts = run === "daily" || run === "all" ? await runAlerts(panel) : undefined;
+    // the 9:00 run=all leaves the alerts to the 9:10 run=rest, so they go out on complete data
+    const alerts = run === "daily" ? await runAlerts(panel) : undefined;
     return NextResponse.json({ ok: results.every((r) => r.ok || r.skipped), results, alerts });
   } catch (e) {
     if (e instanceof SyncBusy) return NextResponse.json({ ok: false, error: e.message }, { status: 409 });
