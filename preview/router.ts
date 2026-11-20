@@ -8,6 +8,7 @@ export const ROUTES: { path: string; hash: string }[] = [
   { path: "/channels", hash: "channels" },
   { path: "/projections", hash: "projections" },
   { path: "/stock", hash: "stock" },
+  { path: "/bottles", hash: "bottles" },
   { path: "/indent", hash: "indent" },
   { path: "/marketing-impact", hash: "marketing-impact" },
   { path: "/plans", hash: "plans" },

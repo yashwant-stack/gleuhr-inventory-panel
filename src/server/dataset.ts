@@ -10,7 +10,7 @@ import "server-only";
 // A product's history starts the day it was added to the CRM (or its first stock movement, if
 // earlier), never at its first sale: a slow seller is not "new" just because it sold late.
 import { addDays, diffDays } from "../lib/dates";
-import type { ChannelInfo, CrmClinic, Dataset, DataHealth, LeftOutProduct, Source } from "../lib/data/model";
+import type { BottleItem, ChannelInfo, CrmClinic, Dataset, DataHealth, LeftOutProduct, Source } from "../lib/data/model";
 import { parseSegment, type ChannelId, type Location, type Product, type PurchaseOrder, type Vendor } from "../lib/domain/types";
 import { CHANNELS } from "../lib/mock/catalog";
 import { type Db, num } from "./db";
@@ -363,5 +363,44 @@ export async function buildDataset(db: Db, now = new Date()): Promise<Dataset> {
     purchaseOrders,
     purchaseOrdersAvailable: Boolean(poAccess?.ok),
     health,
+    bottles: await readBottles(db, addDays(today, -30)),
   };
+}
+
+/**
+ * Bottles and packaging (20 Nov 2026): Zoho items whose Stock field (cf_stock) is "Bottle Count". Their count at the
+ * Mohali warehouse, anything found elsewhere (there should be none), and the last 30 daily Mohali counts.
+ * undefined = not available yet (the catalog step has not stored the Stock field).
+ */
+async function readBottles(db: Db, since: string): Promise<BottleItem[] | undefined> {
+  try {
+    const rows = await db.query<Record<string, unknown>>(
+      `select p.zoho_item_id as id, p.sku, p.name, p.unit,
+         (select s.qty from stock_levels s join locations l using (zoho_location_id) where s.zoho_item_id = p.zoho_item_id and l.is_primary) as qty,
+         coalesce((select sum(greatest(s.qty, 0)) from stock_levels s join locations l using (zoho_location_id)
+                   where s.zoho_item_id = p.zoho_item_id and not l.is_primary), 0) as elsewhere,
+         coalesce((select json_agg(json_build_object('day', ss.day::text, 'qty', ss.qty) order by ss.day)
+                   from stock_snapshots ss join locations l using (zoho_location_id)
+                   where ss.zoho_item_id = p.zoho_item_id and l.is_primary and ss.day >= $1::date), '[]'::json) as history
+       from products p
+       where p.in_zoho and p.active and lower(coalesce(p.stock_type, '')) like 'bottle%'
+       order by p.name`,
+      [since],
+    );
+    return rows.map((r) => {
+      const h = typeof r.history === "string" ? JSON.parse(r.history) : r.history;
+      return {
+        id: String(r.id),
+        sku: String(r.sku ?? ""),
+        name: String(r.name),
+        unit: (r.unit as string | null) ?? null,
+        qty: r.qty === null || r.qty === undefined ? null : num(r.qty),
+        elsewhere: num(r.elsewhere),
+        history: (Array.isArray(h) ? h : []).map((x: { day: string; qty: unknown }) => ({ day: String(x.day).slice(0, 10), qty: num(x.qty) })),
+      };
+    });
+  } catch (e) {
+    if (/stock_type/.test(String(e))) return undefined; // the Stock field is stored by the next catalog step
+    throw e;
+  }
 }

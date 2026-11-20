@@ -62,6 +62,7 @@ export const PAGE_ACCESS: Record<string, Access[]> = {
   "/settings": ["admin", "viewer"],
   "/health": ["admin", "viewer"],
   "/marketing-impact": ["viewer"],
+  "/bottles": ["admin", "viewer"],
 };
 
 /** Pages only some roles see at all (decided 20 Nov 2026: the Purchase-only additions). Other roles don't get the nav item. */

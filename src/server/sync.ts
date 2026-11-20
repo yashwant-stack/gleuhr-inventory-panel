@@ -136,6 +136,8 @@ async function zohoCatalog(panel: Db, z: ZohoClient): Promise<JobOutput> {
   await panel.exec("alter table products add column if not exists segment text");
   await panel.exec("alter table products add column if not exists regimen_raw text");
   await panel.exec("alter table products add column if not exists regimen_checked_at timestamptz");
+  // Zoho's "Stock" item field (cf_stock: Product / Bottle Count / Medical Stock / Supplement / Bag): in the list, free
+  await panel.exec("alter table products add column if not exists stock_type text");
   const wanted = "cf_" + (await settingText(panel, "zoho.segment_field", "Type Regimen")).toLowerCase().replace(/^cf_/, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
   const cfKeys = [...new Set(items.data.flatMap((i) => Object.keys(i).filter((k) => k.startsWith("cf_"))))];
   const segField = cfKeys.includes(wanted) ? wanted : (cfKeys.find((k) => /segment|regime/i.test(k)) ?? null);
@@ -146,6 +148,7 @@ async function zohoCatalog(panel: Db, z: ZohoClient): Promise<JobOutput> {
     category: i.category_name || null,
     segment: segField ? parseSegment(i[segField]) : null,
     regimen: segField ? String(i[segField] ?? "").trim() : null,
+    stockType: String(i.cf_stock ?? "").trim() || null,
     unit: i.unit || null,
     rate: i.rate === undefined || i.rate === "" ? null : num(i.rate),
     purchase: i.purchase_rate === undefined || i.purchase_rate === "" ? null : num(i.purchase_rate),
@@ -155,10 +158,10 @@ async function zohoCatalog(panel: Db, z: ZohoClient): Promise<JobOutput> {
     track: i.track_inventory !== false,
   }));
   await panel.query(
-    `insert into products (zoho_item_id, sku, name, category, segment, regimen_raw, regimen_checked_at, unit, sell_price, purchase_price, reorder_level, vendor_name, active, track_inventory, in_zoho, updated_at)
-     select r.id, r.sku, r.name, r.category, r.segment, r.regimen, case when $2 then now() end, r.unit, r.rate, r.purchase, r.reorder, r.vendor, r.active, r.track, true, now()
-     from jsonb_to_recordset($1::text::jsonb) as r(id text, sku text, name text, category text, segment text, regimen text, unit text, rate numeric, purchase numeric, reorder numeric, vendor text, active boolean, track boolean)
-     on conflict (zoho_item_id) do update set sku = excluded.sku, name = excluded.name, category = excluded.category,
+    `insert into products (zoho_item_id, sku, name, category, stock_type, segment, regimen_raw, regimen_checked_at, unit, sell_price, purchase_price, reorder_level, vendor_name, active, track_inventory, in_zoho, updated_at)
+     select r.id, r.sku, r.name, r.category, r."stockType", r.segment, r.regimen, case when $2 then now() end, r.unit, r.rate, r.purchase, r.reorder, r.vendor, r.active, r.track, true, now()
+     from jsonb_to_recordset($1::text::jsonb) as r(id text, sku text, name text, category text, "stockType" text, segment text, regimen text, unit text, rate numeric, purchase numeric, reorder numeric, vendor text, active boolean, track boolean)
+     on conflict (zoho_item_id) do update set sku = excluded.sku, name = excluded.name, category = excluded.category, stock_type = excluded.stock_type,
        segment = case when $2 then excluded.segment else products.segment end,
        regimen_raw = case when $2 then excluded.regimen_raw else products.regimen_raw end,
        regimen_checked_at = case when $2 then now() else products.regimen_checked_at end, unit = excluded.unit,

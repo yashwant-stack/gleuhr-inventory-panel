@@ -114,6 +114,22 @@ export interface Dataset {
   /** false = the Zoho login cannot read purchase orders yet (stock on the way unknown). */
   purchaseOrdersAvailable: boolean;
   health: DataHealth;
+  /** Bottles and packaging: Zoho items whose Stock field is "Bottle Count" (kept only at Mohali). */
+  bottles?: BottleItem[];
+}
+
+export interface BottleItem {
+  /** Zoho item_id. */
+  id: string;
+  sku: string;
+  name: string;
+  unit: string | null;
+  /** Pieces at the Mohali warehouse (null = not read yet). */
+  qty: number | null;
+  /** Pieces anywhere else (bottles should be only at Mohali; > 0 is flagged). */
+  elsewhere: number;
+  /** Daily Mohali counts, oldest first (last 30 days). */
+  history: { day: string; qty: number }[];
 }
 
 // ── wire format (JSON) ────────────────────────────────────────────────────────

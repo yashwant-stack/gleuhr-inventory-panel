@@ -109,6 +109,16 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   const serumLine = alerts.split('\n').find((l) => l.startsWith('Hair Serum')) ?? '';
   ok(serumLine.includes('Night Regime: order at 150 days left') && serumLine.includes(withIt), `Alerts: Hair Serum with its Night Regime rule and the order with the campaign (${withIt})`);
 
+  // Bottles: Zoho's "Bottle Count" items at Mohali, linked to their product by name, or honestly not linked
+  await p.goto(FILE + '#bottles'); await p.waitForTimeout(500);
+  const bt = await p.locator('main').innerText();
+  ok(bt.includes('Bottle pieces at Mohali') && bt.includes('kept only at the Mohali warehouse'), 'Bottles: the page, Mohali only');
+  const line = (name) => bt.split('\n').find((l) => l.startsWith(name)) ?? '';
+  ok(/Night Cream[\s\S]{0,80}Multipurpose Night Cream/.test(bt), 'Bottles: Night Cream bottles are for Multipurpose Night Cream');
+  ok(bt.includes('Not linked: “vitaminc” fits'), 'Bottles: “Vitamin C” fits two products and is not guessed');
+  ok(bt.includes('pace from Zoho’s daily counts'), 'Bottles: White inner lid is paced from 20 days of Zoho counts');
+  await p.screenshot({ path: OUT + '/bottles.png' });
+
   ok(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await b.close();
 })().catch((e) => { console.error('SCRIPT ERROR', e.message); process.exit(1); });

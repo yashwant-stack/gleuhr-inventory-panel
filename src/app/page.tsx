@@ -95,7 +95,7 @@ export default function HomePage() {
       </div>
 
       <div className="mt-3 grid gap-3 xl:grid-cols-3">
-        {inv ? <InventoryValueCard inv={inv} filtered={f.categories.length + (f.search ? 1 : 0) > 0} segmentFilter={(f.segments?.length ?? 0) > 0} settings={settings} /> : <Card className="xl:col-span-2">
+        {inv ? <InventoryValueCard inv={inv} filtered={f.categories.length + (f.search ? 1 : 0) > 0} segmentFilter={(f.segments?.length ?? 0) > 0} settings={settings} bottlePieces={ds.bottles ? ds.bottles.reduce((a, b) => a + Math.max(0, b.qty ?? 0), 0) : null} /> : <Card className="xl:col-span-2">
           <CardHeader
             title="Sales over time"
             sub={`${fmtRange(f.from, f.to)} · by channel`}
@@ -259,14 +259,20 @@ const SEGMENT_COLOR: Record<string, string> = { day: "var(--color-seg-day)", nig
 const segmentLabel = (k: string) => SEGMENTS.find((g) => g.id === k)?.label ?? "Not set in Zoho";
 
 /** Purchase's Home: the working capital in stock, where it sits and which segment it is in. */
-function InventoryValueCard({ inv, filtered, segmentFilter, settings }: { inv: InventoryValue; filtered: boolean; segmentFilter: boolean; settings: FormulaSettings }) {
+function InventoryValueCard({ inv, filtered, segmentFilter, settings, bottlePieces }: { inv: InventoryValue; filtered: boolean; segmentFilter: boolean; settings: FormulaSettings; bottlePieces: number | null }) {
   const stockValue = inv.total - inv.bottles;
   const share = (v: number) => (inv.total ? `${Math.round((v / inv.total) * 100)}%` : "–");
   const rows: { label: string; value: number | null; note?: string }[] = [
     { label: "Mohali warehouse", value: inv.byKind.warehouse },
     { label: `Clinics (${inv.counted.clinic})`, value: inv.byKind.clinic },
     ...(inv.counted.darkstore || inv.byKind.darkstore ? [{ label: `Darkstores (${inv.counted.darkstore})`, value: inv.byKind.darkstore }] : []),
-    { label: "Unused bottles", value: inv.bottles || null, note: inv.bottles ? "entered in Settings" : "Not entered yet. Management enters it in Settings" },
+    {
+      label: "Unused bottles",
+      value: inv.bottles || null,
+      note:
+        (bottlePieces !== null ? `${fmtInt(bottlePieces)} pieces at Mohali in Zoho. ` : "") +
+        (inv.bottles ? "Value entered in Settings" : "Zoho has no purchase price for bottles: Management can enter their value in Settings"),
+    },
   ];
   const maxSeg = Math.max(1, ...inv.bySegment.map((x) => x.value));
   return (
@@ -282,7 +288,17 @@ function InventoryValueCard({ inv, filtered, segmentFilter, settings }: { inv: I
                 <tr key={r.label}>
                   <td className="py-1.5">
                     {r.label}
-                    {r.note && r.value === null ? <div className="text-[11.5px] text-muted">{r.note}</div> : null}
+                    {r.note ? (
+                      <div className="text-[11.5px] text-muted">
+                        {r.label === "Unused bottles" ? (
+                          <Link href="/bottles" className="hover:underline">
+                            {r.note}
+                          </Link>
+                        ) : (
+                          r.note
+                        )}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="py-1.5 text-right tabular font-medium">{r.value === null ? <span className="text-muted">–</span> : fmtMoneyShort(r.value)}</td>
                   <td className="w-12 py-1.5 text-right tabular text-[12px] text-muted">{r.value === null ? "" : share(r.value)}</td>

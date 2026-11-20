@@ -43,6 +43,10 @@ create table if not exists products (
 );
 
 alter table products add column if not exists segment text;
+-- Zoho's Type Regimen text and when it was read (zoho_regimen); Zoho's Stock field (Bottle Count …), 20 Nov 2026
+alter table products add column if not exists regimen_raw text;
+alter table products add column if not exists regimen_checked_at timestamptz;
+alter table products add column if not exists stock_type text;
 
 -- Latest stock per item per location (one Zoho call per location refreshes a whole column).
 create table if not exists stock_levels (

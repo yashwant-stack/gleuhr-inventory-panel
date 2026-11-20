@@ -187,9 +187,11 @@ const ITEMS = [
   { item_id: "I-PLAN", name: "Skin Plan", sku: "SP-1M", rate: 4999, status: "active", track_inventory: false },
   { item_id: "I-COMBO", name: "Amazon Combo", sku: "AC-1", rate: 1499, status: "active", track_inventory: true },
   { item_id: "I-RETIRED", name: "Retired Item", sku: "RT-1", rate: 99, status: "inactive", track_inventory: true },
+  // a bottle: Zoho's Stock field (cf_stock, in the list) says "Bottle Count"; kept only at Mohali
+  { item_id: "I-BOTTLE", name: "Hair Serum Bottle", sku: "BOTT-HS", rate: 10, purchase_rate: 10, unit: "Box", status: "active", track_inventory: true, cf_stock: "Bottle Count" },
 ];
 const STOCK: Record<string, Record<string, number>> = {
-  "Z-MOH": { "I-SERUM": 110, "I-CREAM": 0, "I-COMBO": 40 },
+  "Z-MOH": { "I-SERUM": 110, "I-CREAM": 0, "I-COMBO": 40, "I-BOTTLE": 5000 },
   "Z-LDH": { "I-SERUM": 40, "I-CREAM": 12 },
 };
 
@@ -400,7 +402,9 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
       { name: "Skin Plan", reason: "Zoho does not track stock for its item", unitsSold90d: 2, lastSale: "2026-11-01" },
       { name: "Ghost Product", reason: "Linked to a Zoho item that Zoho doesn’t have", unitsSold90d: 0, lastSale: null },
     ]);
-    expect(h.zohoOnlyItems).toBe(1); // Amazon Combo (the retired item is inactive)
+    expect(h.zohoOnlyItems).toBe(2); // Amazon Combo and the bottle (the retired item is inactive)
+    // the bottle: its Mohali count, nothing elsewhere, and today's count as the first day of its history
+    expect(ds.bottles).toEqual([{ id: "I-BOTTLE", sku: "BOTT-HS", name: "Hair Serum Bottle", unit: "Box", qty: 5000, elsewhere: 0, history: [{ day: TODAY, qty: 5000 }] }]);
     expect(h.lastSync).toHaveLength(8); // + the weekly Type Regimen read
     // every sync job ran; the reorder alerts run after the morning sync, so they have not run in this test
     expect(h.lastSync.filter((s) => s.job !== "Reorder alerts (email / WhatsApp)").every((s) => s.ok && s.at)).toBe(true);

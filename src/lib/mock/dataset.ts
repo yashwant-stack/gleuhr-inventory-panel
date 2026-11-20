@@ -20,6 +20,7 @@ import {
   VENDORS,
   SAMPLE_SEGMENT,
 } from "./catalog";
+import type { BottleItem } from "../data/model";
 
 export const TODAY = "2026-11-14";
 export const LAST_SYNCED_AT = "2026-11-14T11:02:00+05:30";
@@ -350,6 +351,25 @@ export function getDataset(): Dataset {
     purchaseOrders,
     purchaseOrdersAvailable: true,
     health: SAMPLE_HEALTH,
+    bottles: sampleBottles(days),
   };
   return cached;
+}
+
+/**
+ * Sample bottles (names in the shape of Gleuhr's Zoho bottle items; counts made up). "White inner lid" has 20 days
+ * of falling counts, so its pace comes from the counts; the others are paced by the products they are linked to.
+ */
+function sampleBottles(days: string[]): BottleItem[] {
+  const last20 = days.slice(-20);
+  const b = (sku: string, name: string, qty: number, history: { day: string; qty: number }[] = []): BottleItem => ({ id: `zb-${sku}`, sku, name, unit: "Box", qty, elsewhere: 0, history });
+  return [
+    b("BOTT-NIGHT-CREAM", "Night Cream", 950),
+    b("BOTT-UV-ARMOUR-PUMP-CAP", "UV Armour Pump + cap", 240),
+    b("BOTT-7612C-CAP", "7612-C Cap (Age Combat-Gluta Beauty-collagen Serum)", 2016),
+    b("BOTT-EGF-BTL", "EGF Bottles", 1980),
+    b("BOTT-VIT-C", "Vitamin C", 1913),
+    b("BOTT-WHITE-INNER-LID", "White inner lid", 24528, last20.map((day, i) => ({ day, qty: 30_000 - i * 288 }))),
+    b("BOTT-15ML-PLUG", "15ml plug", 2000),
+  ];
 }

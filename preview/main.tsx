@@ -12,6 +12,7 @@ import AlertsPage from "@/app/alerts/page";
 import ChannelsPage from "@/app/channels/page";
 import HealthPage from "@/app/health/page";
 import IndentPage from "@/app/indent/page";
+import BottlesPage from "@/app/bottles/page";
 import MarketingImpactPage from "@/app/marketing-impact/page";
 import HomePage from "@/app/page";
 import PlanFormPage from "@/app/plans/form/page";
@@ -34,6 +35,7 @@ const PAGES: Record<string, ComponentType> = {
   "/projections": ProjectionsPage,
   "/stock": StockPage,
   "/indent": IndentPage,
+  "/bottles": BottlesPage,
   "/marketing-impact": MarketingImpactPage,
   "/plans": PlansPage,
   "/plans/form": PlanFormPage,
