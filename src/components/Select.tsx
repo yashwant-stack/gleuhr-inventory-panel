@@ -22,6 +22,7 @@ export function Select<T extends string>({
   width,
   disabled,
   disabledReason,
+  ariaLabel,
 }: {
   value: T;
   options: Option<T>[];
@@ -30,6 +31,8 @@ export function Select<T extends string>({
   width?: number;
   disabled?: boolean;
   disabledReason?: string;
+  /** Accessible name when no visible label is shown. */
+  ariaLabel?: string;
 }) {
   const btn = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -42,7 +45,7 @@ export function Select<T extends string>({
         ref={btn}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={label}
+        aria-label={ariaLabel ?? label}
         title={disabled ? disabledReason : undefined}
         onClick={() => !disabled && setOpen((o) => !o)}
         className={clsx(

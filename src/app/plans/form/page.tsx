@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { SubmissionChip } from "@/components/plan-ui";
+import { Select } from "@/components/Select";
 import { toast } from "@/components/Toast";
 import { Button, Card, CardHeader, Delta, Note, PageHeader, StatusChip } from "@/components/ui";
 import { urgency, type ProductMetrics } from "@/lib/data/engine";
@@ -772,6 +773,23 @@ function ConsentDialog({
 }
 
 /** One channel's products: stock now, last 30 days, the system's expectation, the planner's own number and ad budget. */
+/** The % steps Marketing can choose for a product's expected units, against System (decided 20 Nov 2026). */
+const PCT_STEPS = [-50, -40, -30, -20, -10, 0, 10, 20, 30, 40, 50, 75, 100, 150, 200];
+const pctLabel = (p: number) => (p === 0 ? "0% (System)" : `${p > 0 ? "+" : ""}${p}%`);
+
+/** The step the current number sits on; a number saved before the dropdown keeps its own % (shown as such). */
+function pctValue(n: number, system: number): string {
+  if (Number.isNaN(n) || system <= 0) return "0";
+  return String(Math.round((n / system - 1) * 100));
+}
+
+function pctOptions(n: number, system: number): { value: string; label: string }[] {
+  const opts = PCT_STEPS.map((p) => ({ value: String(p), label: pctLabel(p) }));
+  const cur = Number(pctValue(n, system));
+  if (!PCT_STEPS.includes(cur)) opts.push({ value: String(cur), label: pctLabel(cur) });
+  return opts.sort((a, b) => Number(a.value) - Number(b.value));
+}
+
 function ProductPlan({
   line,
   days,
@@ -829,7 +847,7 @@ function ProductPlan({
               <th className="num">Stock now</th>
               <th className="num">Last 30 days (units)</th>
               <th className="num">System</th>
-              <th className="num" style={{ width: 110 }}>
+              <th className="num" style={{ width: 190 }}>
                 Expected units
               </th>
               <th className="num">Change</th>
@@ -863,14 +881,27 @@ function ProductPlan({
                   <td className="num text-ink-2">{fmtInt(r.last30)}</td>
                   <td className="num text-ink-2">{fmtInt(r.systemUnits)}</td>
                   <td className="num">
-                    <input
-                      inputMode="numeric"
-                      aria-label={`Expected units for ${m.product.name} (${line.label})`}
-                      value={values[r.productId] ?? ""}
-                      disabled={!canEdit}
-                      onChange={(e) => onChange(r.productId, e.target.value)}
-                      className={clsx("h-8 w-full rounded-md border px-2 text-right tabular", Number.isNaN(r.n) ? "border-st-critical" : "border-line-strong", !canEdit && "bg-sunken text-ink-2")}
-                    />
+                    {/* Marketing changes the expected units only as a % of System (decided 20 Nov 2026) */}
+                    {r.systemUnits > 0 ? (
+                      <div className="flex items-center justify-end gap-2">
+                        <Select<string>
+                          ariaLabel={`Change for ${m.product.name} (${line.label})`}
+                          width={96}
+                          value={pctValue(r.n, r.systemUnits)}
+                          options={pctOptions(r.n, r.systemUnits)}
+                          disabled={!canEdit}
+                          disabledReason="This plan is locked."
+                          onChange={(v) => onChange(r.productId, String(Math.round((r.systemUnits * (100 + Number(v))) / 100)))}
+                        />
+                        <span className="w-14 text-right tabular font-semibold" aria-label={`Expected units for ${m.product.name} (${line.label})`}>
+                          {Number.isNaN(r.n) ? "—" : fmtInt(r.n)}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-[12px] text-muted" title="No sales here in the last 60 days: there is nothing to scale by %.">
+                        {Number.isNaN(r.n) || r.n === 0 ? "—" : fmtInt(r.n)}
+                      </span>
+                    )}
                   </td>
                   <td className={clsx("num whitespace-nowrap", flagged && "font-semibold text-st-low")}>
                     {r.systemUnits <= 0 ? (!Number.isNaN(r.n) && r.n > 0 ? "new" : "—") : g === null ? "—" : `${fmtPct(g, true)}${flagged ? " ⚑" : ""}`}

@@ -36,11 +36,18 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   ok(['Product', 'Stock now', 'System', 'Expected units', 'Change', 'Ad budget (₹)'].every((h) => heads.includes(h)), `product table: ${heads.join(' | ')}`);
   const channelRow = p.locator('tr', { has: p.getByRole('button', { name: /^Clinics hide products/ }) });
   const totalBefore = num(await channelRow.locator('td').nth(2).innerText());
-  const first = panel.getByLabel(/Expected units for .* \(Clinics\)/).first();
-  const firstBefore = Number(await first.inputValue());
-  await first.fill(String(firstBefore + 100));
+  // Marketing changes a product's expected units only as a % of System, from a dropdown (20 Nov 2026)
+  ok((await panel.locator('input[aria-label^="Expected units for"]').count()) === 0, 'no typed expected units: a % dropdown per row');
+  const first = panel.getByLabel(/^Expected units for .* \(Clinics\)/).first();
+  const firstBefore = num(await first.innerText());
+  await panel.getByRole('button', { name: /^Change for .* \(Clinics\)/ }).first().click();
+  await p.getByRole('option', { name: '+50%', exact: true }).click();
   await p.waitForTimeout(150);
-  ok(num(await channelRow.locator('td').nth(2).innerText()) === totalBefore + 100, 'channel total follows its products');
+  const firstAfter = num(await first.innerText());
+  const firstRow = panel.locator('tbody tr').first();
+  const system = num(await firstRow.locator('td').nth(3).innerText());
+  ok(firstAfter === Math.round(system * 1.5) && (await firstRow.innerText()).includes('+50%'), `+50% of System (${system}): expected units ${firstBefore} → ${firstAfter}`);
+  ok(num(await channelRow.locator('td').nth(2).innerText()) === totalBefore + (firstAfter - firstBefore), 'channel total follows its products');
 
   // an ad budget on a product that will run out: the row warns, the channel shows "at risk"
   const uv = panel.getByLabel('Ad budget for UV Armour Sunscreen (Clinics)');
@@ -82,8 +89,9 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   await p.getByRole('link', { name: 'View (locked)' }).first().click();
   await p.waitForTimeout(400);
   await p.getByRole('button', { name: /^Clinics by product/ }).click();
-  const again = p.locator('#products-clinic').getByLabel(/Expected units for .* \(Clinics\)/).first();
-  ok(Number(await again.inputValue()) === firstBefore + 100 && (await again.isDisabled()), 'locked plan keeps the numbers and cannot be edited');
+  const again = p.locator('#products-clinic').getByLabel(/^Expected units for .* \(Clinics\)/).first();
+  const lockedPick = p.locator('#products-clinic').getByRole('button', { name: /^Change for .* \(Clinics\)/ }).first();
+  ok(num(await again.innerText()) === firstAfter && (await lockedPick.getAttribute('title')) === 'This plan is locked.', 'locked plan keeps the numbers and cannot be edited');
   ok((await p.locator('main').innerText()).includes('It can’t be edited. Management can reopen it'), 'locked note explains who can reopen');
   ok((await p.getByRole('button', { name: 'Reopen for changes' }).count()) === 0, 'Marketing has no reopen button');
 
@@ -94,7 +102,7 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   await role('Marketing');
   await p.waitForTimeout(300);
   await p.getByRole('button', { name: /^Clinics by product/ }).click();
-  ok(!(await p.locator('#products-clinic').getByLabel(/Expected units for .* \(Clinics\)/).first().isDisabled()), 'after Management reopens it, Marketing can edit again');
+  ok((await p.locator('#products-clinic').getByRole('button', { name: /^Change for .* \(Clinics\)/ }).first().getAttribute('title')) === null, 'after Management reopens it, Marketing can edit again');
 
   ok(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await b.close();
