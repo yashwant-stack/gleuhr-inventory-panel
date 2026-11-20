@@ -11,14 +11,28 @@ import { computeMetrics, inventoryValue } from "./engine";
 const ds = getDataset();
 
 describe("segments from the Zoho field", () => {
-  it("reads the field's text, whatever its wording", () => {
-    expect(parseSegment("Day Regime")).toBe("day");
-    expect(parseSegment("night regime")).toBe("night");
-    expect(parseSegment("Wellness (Edibles)")).toBe("wellness");
-    expect(parseSegment("Supplements")).toBe("wellness");
+  it("follows the founder's rule for Zoho's Type Regimen field (20 Nov 2026)", () => {
+    // night → Night Regime; anytime → Wellness; anything else → Day Regime
+    expect(parseSegment("Night regimen")).toBe("night");
+    expect(parseSegment("anytime")).toBe("wellness");
+    expect(parseSegment("Any time")).toBe("wellness");
+    expect(parseSegment("day regimen")).toBe("day");
+    expect(parseSegment("after lunch")).toBe("day");
+    expect(parseSegment("Day regimen, after lunch/breakfast")).toBe("day");
+    expect(parseSegment("twice daily")).toBe("day");
+    // two or three in one field: the longest day limit wins (Night 150 → 180 beats Day / Wellness 120 → 150)
+    expect(parseSegment("Day regimen, Night regimen")).toBe("night");
+    expect(parseSegment("anytime, night regimen")).toBe("night");
+    expect(parseSegment("day regimen, anytime, night regimen")).toBe("night");
+    // Day and Wellness have the same limits: Wellness
+    expect(parseSegment("day regimen, anytime")).toBe("wellness");
+    // empty = not set in Zoho
     expect(parseSegment("")).toBeNull();
+    expect(parseSegment("   ")).toBeNull();
     expect(parseSegment(null)).toBeNull();
-    expect(parseSegment("Serums")).toBeNull();
+  });
+  it("the longest day limit follows the settings: if Day were given a longer target, Day would win", () => {
+    expect(parseSegment("Day regimen, Night regimen", { ...S, dayTargetDays: 200 })).toBe("day");
   });
 });
 

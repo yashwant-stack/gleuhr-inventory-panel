@@ -48,6 +48,8 @@ export interface Product {
   segment?: Segment | null;
   /** true = Zoho has no real purchase price, so `cost` is the fallback share of the selling price. */
   costEstimated?: boolean;
+  /** Zoho's Type Regimen text as typed (e.g. "Day regimen, after lunch"); null = empty in Zoho. */
+  regimenRaw?: string | null;
 }
 
 /** The three product segments (decided 20 Nov 2026), read from a field on each Zoho item. */
@@ -59,13 +61,27 @@ export const SEGMENTS: { id: Segment; label: string }[] = [
 ];
 
 /** Reads a segment from free text (a Zoho field value or category): "Day regime", "NIGHT", "Wellness / edible"… */
-export function parseSegment(v: unknown): Segment | null {
-  const s = String(v ?? "").toLowerCase();
-  if (!s.trim()) return null;
-  if (/\bnight/.test(s)) return "night";
-  if (/\bday\b|day[\s-]*regime/.test(s)) return "day";
-  if (/wellness|edible|nutrition|supplement/.test(s)) return "wellness";
-  return null;
+/**
+ * Zoho's "Type Regimen" field → the product's regimen (decided 20 Nov 2026, the founder's rule):
+ *   "anytime" → Wellness · "night" → Night Regime · any other value ("day regimen", "after lunch",
+ *   "Day regimen, after lunch/breakfast" …) → Day Regime. Empty → null ("Not set in Zoho").
+ *   Two or three in one field → the one with the longest day limit: the bigger target (then trigger) of its
+ *   purchase rule, so Night (back to 180) beats Day and Wellness (150); Day vs Wellness tie → Wellness.
+ */
+export function parseSegment(v: unknown, s: FormulaSettings = DEFAULT_FORMULA_SETTINGS): Segment | null {
+  const t = String(v ?? "").toLowerCase().trim();
+  if (!t) return null;
+  if (t === "day" || t === "night" || t === "wellness") return t; // the panel's own stored value
+  const found: Segment[] = [];
+  if (/\bany\s*-?\s*time\b|wellness/.test(t)) found.push("wellness");
+  if (/night/.test(t)) found.push("night");
+  if (/\bday\b|day\s*regim|lunch|breakfast|morning/.test(t) || !found.length) found.push("day");
+  const rank = (g: Segment) => {
+    const r = purchaseRule(g, s);
+    // tie order: night, then wellness, then day
+    return r.coverDays * 1e6 + r.reorderAtDays * 1e3 + (g === "night" ? 2 : g === "wellness" ? 1 : 0);
+  };
+  return found.sort((a, b) => rank(b) - rank(a))[0]!;
 }
 
 export interface PurchaseOrder {

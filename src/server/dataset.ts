@@ -28,6 +28,7 @@ export const JOB_LABELS: Record<string, string> = {
   crm_flows: "CRM sales",
   crm_health: "Stock changes Zoho refused",
   reorder_alerts: "Reorder alerts (email / WhatsApp)",
+  zoho_regimen: "Type Regimen per product (weekly)",
 };
 
 function slug(s: string): string {
@@ -168,8 +169,9 @@ export async function buildDataset(db: Db, now = new Date()): Promise<Dataset> {
       name: String(p.name),
       // Zoho's category, else the online CRM's (Zoho's items carry none today)
       category: (p.category as string | null) || crm.map((c) => c.crm_category).find(Boolean) || "Uncategorised",
-      // from the Zoho item's segment field (or its category); the CRM's category as a last resort
-      segment: parseSegment(p.segment) ?? parseSegment(p.category) ?? parseSegment(crm.map((c) => c.crm_category).find(Boolean)),
+      // from Zoho's Type Regimen field only (decided 20 Nov 2026): empty in Zoho = "Not set in Zoho"
+      segment: parseSegment(p.segment),
+      regimenRaw: (p.regimen_raw as string | null | undefined) ?? null,
       price,
       // Zoho's purchase price of ₹10 or less is a placeholder on many items: fall back to a share of the selling price.
       cost: purchase > 10 ? purchase : Math.round(price * costRatio),

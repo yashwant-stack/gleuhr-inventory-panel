@@ -20,15 +20,17 @@ import {
   type ZohoLocation,
 } from "./zoho";
 
-export type JobName = "crm_reference" | "zoho_catalog" | "zoho_stock" | "crm_flows" | "crm_health" | "zoho_access";
+export type JobName = "crm_reference" | "zoho_catalog" | "zoho_stock" | "crm_flows" | "crm_health" | "zoho_access" | "zoho_regimen";
 
 /** The full sync runs once a day at 9:00 AM IST (vercel.json) or by hand ("Sync from Zoho now"), with zoho_access. */
 // Order matters (20 Nov 2026): the CRM steps make no Zoho calls and are quick, so they run first; Zoho stock runs
 // last, inside the run's time budget, and a location not reached is read by the catch-up (REST_JOBS).
 export const FREQUENT_JOBS: JobName[] = ["zoho_catalog", "crm_reference", "crm_flows", "crm_health", "zoho_stock"];
-export const DAILY_JOBS: JobName[] = ["zoho_access"];
-/** The catch-up after a full sync: stock at the locations it did not reach (deps.stockSince), then the access check. */
-export const REST_JOBS: JobName[] = ["zoho_stock", "zoho_access"];
+// zoho_regimen reads each planned product's Type Regimen (one call per product, once a week): last, so a short
+// run never delays the stock; what it does not reach is read by the catch-up or the next day.
+export const DAILY_JOBS: JobName[] = ["zoho_access", "zoho_regimen"];
+/** The catch-up after a full sync: stock at the locations it did not reach (deps.stockSince), the access check, regimens. */
+export const REST_JOBS: JobName[] = ["zoho_stock", "zoho_access", "zoho_regimen"];
 
 /** The catch-up's jobs: stock always (it only reads what is missing), the access check unless it already passed today. */
 export async function restJobs(panel: Db, now = new Date()): Promise<JobName[]> {
@@ -36,12 +38,14 @@ export async function restJobs(panel: Db, now = new Date()): Promise<JobName[]> 
     "select count(*)::int as n from sync_runs where job = 'zoho_access' and ok and finished_at >= ($1::date::timestamp - interval '5 hours 30 minutes')",
     [istToday(now)],
   );
-  return (done?.n ?? 0) > 0 ? ["zoho_stock"] : REST_JOBS;
+  return (done?.n ?? 0) > 0 ? ["zoho_stock", "zoho_regimen"] : REST_JOBS;
 }
 
 /** true when a run ran out of time before reading every location, or before the access check. */
 export function runLeftWork(results: JobResult[]): boolean {
-  return results.some((r) => (r.job === "zoho_stock" && /left for the next run/.test(r.note)) || (r.job === "zoho_access" && r.skipped && /time is up/.test(r.note)));
+  return results.some(
+    (r) => (r.job === "zoho_stock" && /left for the next run/.test(r.note)) || ((r.job === "zoho_access" || r.job === "zoho_regimen") && r.skipped && /time is up/.test(r.note)),
+  );
 }
 
 const NEEDS: Record<JobName, { zoho?: boolean; crm?: boolean }> = {
@@ -51,6 +55,7 @@ const NEEDS: Record<JobName, { zoho?: boolean; crm?: boolean }> = {
   crm_flows: { crm: true },
   crm_health: { crm: true },
   zoho_access: { zoho: true },
+  zoho_regimen: { zoho: true },
 };
 
 export interface JobResult {
@@ -125,12 +130,12 @@ async function zohoCatalog(panel: Db, z: ZohoClient): Promise<JobOutput> {
   );
   const items = await listAll<ZohoItemRow>(z, "items", "items");
   if (!items.ok) throw new Error(`Zoho items: ${items.message}`);
-  // Day Regime / Night Regime / Wellness (decided 20 Nov 2026): a custom field on each Zoho item. The item list
-  // carries custom fields as cf_<api name>, and Zoho makes the api name from the label ("Segment" → cf_segment), so
-  // no extra Zoho call is needed: the field named in setting "zoho.segment_field" (default "Type Regimen", the
-  // field Gleuhr added in Zoho: cf_type_regimen), else any
-  // cf_ key with "segment" or "regime" in it. Until the field exists, the item's category is read instead.
+  // Day Regime / Night Regime / Wellness (decided 20 Nov 2026) come from Zoho's "Type Regimen" item field. Zoho's
+  // item LIST leaves it out today (it is only in each item's own record), so zoho_regimen reads it per product;
+  // when the list does carry it (cf_type_regimen), it is taken from here at no extra cost.
   await panel.exec("alter table products add column if not exists segment text");
+  await panel.exec("alter table products add column if not exists regimen_raw text");
+  await panel.exec("alter table products add column if not exists regimen_checked_at timestamptz");
   const wanted = "cf_" + (await settingText(panel, "zoho.segment_field", "Type Regimen")).toLowerCase().replace(/^cf_/, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
   const cfKeys = [...new Set(items.data.flatMap((i) => Object.keys(i).filter((k) => k.startsWith("cf_"))))];
   const segField = cfKeys.includes(wanted) ? wanted : (cfKeys.find((k) => /segment|regime/i.test(k)) ?? null);
@@ -139,7 +144,8 @@ async function zohoCatalog(panel: Db, z: ZohoClient): Promise<JobOutput> {
     sku: i.sku || null,
     name: i.name,
     category: i.category_name || null,
-    segment: parseSegment(segField ? i[segField] : null) ?? parseSegment(i.category_name),
+    segment: segField ? parseSegment(i[segField]) : null,
+    regimen: segField ? String(i[segField] ?? "").trim() : null,
     unit: i.unit || null,
     rate: i.rate === undefined || i.rate === "" ? null : num(i.rate),
     purchase: i.purchase_rate === undefined || i.purchase_rate === "" ? null : num(i.purchase_rate),
@@ -149,13 +155,16 @@ async function zohoCatalog(panel: Db, z: ZohoClient): Promise<JobOutput> {
     track: i.track_inventory !== false,
   }));
   await panel.query(
-    `insert into products (zoho_item_id, sku, name, category, segment, unit, sell_price, purchase_price, reorder_level, vendor_name, active, track_inventory, in_zoho, updated_at)
-     select r.id, r.sku, r.name, r.category, r.segment, r.unit, r.rate, r.purchase, r.reorder, r.vendor, r.active, r.track, true, now()
-     from jsonb_to_recordset($1::text::jsonb) as r(id text, sku text, name text, category text, segment text, unit text, rate numeric, purchase numeric, reorder numeric, vendor text, active boolean, track boolean)
-     on conflict (zoho_item_id) do update set sku = excluded.sku, name = excluded.name, category = excluded.category, segment = excluded.segment, unit = excluded.unit,
+    `insert into products (zoho_item_id, sku, name, category, segment, regimen_raw, regimen_checked_at, unit, sell_price, purchase_price, reorder_level, vendor_name, active, track_inventory, in_zoho, updated_at)
+     select r.id, r.sku, r.name, r.category, r.segment, r.regimen, case when $2 then now() end, r.unit, r.rate, r.purchase, r.reorder, r.vendor, r.active, r.track, true, now()
+     from jsonb_to_recordset($1::text::jsonb) as r(id text, sku text, name text, category text, segment text, regimen text, unit text, rate numeric, purchase numeric, reorder numeric, vendor text, active boolean, track boolean)
+     on conflict (zoho_item_id) do update set sku = excluded.sku, name = excluded.name, category = excluded.category,
+       segment = case when $2 then excluded.segment else products.segment end,
+       regimen_raw = case when $2 then excluded.regimen_raw else products.regimen_raw end,
+       regimen_checked_at = case when $2 then now() else products.regimen_checked_at end, unit = excluded.unit,
        sell_price = excluded.sell_price, purchase_price = excluded.purchase_price, reorder_level = excluded.reorder_level,
        vendor_name = excluded.vendor_name, active = excluded.active, track_inventory = excluded.track_inventory, in_zoho = true, updated_at = now()`,
-    [JSON.stringify(itemRows)],
+    [JSON.stringify(itemRows), segField !== null],
   );
   // An item Zoho no longer lists stays in the table (its history matters) but is marked as gone.
   const gone = await panel.query<{ n: number }>(
@@ -166,9 +175,10 @@ async function zohoCatalog(panel: Db, z: ZohoClient): Promise<JobOutput> {
   );
   const goneN = gone[0]?.n ?? 0;
   const segN = itemRows.filter((i) => i.segment).length;
+  const regimenNote = segField ? `Type Regimen (${segField}) filled in on ${segN} items` : "Type Regimen is read per product (zoho_regimen)";
   return {
     rows: locRows.length + itemRows.length,
-    note: `${locRows.length} locations, ${itemRows.length} items${goneN ? `; ${goneN} no longer in Zoho` : ""}; Type Regimen ${segField ? `(${segField}) filled in on ${segN} items` : "empty on every item so far"}`,
+    note: `${locRows.length} locations, ${itemRows.length} items${goneN ? `; ${goneN} no longer in Zoho` : ""}; ${regimenNote}`,
   };
 }
 
@@ -236,6 +246,63 @@ async function zohoStock(panel: Db, z: ZohoClient, now: Date, since?: Date): Pro
   if (skipped) parts.push(`${skipped} refused earlier, tried again tomorrow`);
   if (left) parts.push(`${left} left for the next run (${stop})`);
   return { rows, note: parts.join("; "), stop };
+}
+
+/**
+ * Type Regimen per product (decided 20 Nov 2026). Zoho's item list leaves the field out, so each planned product
+ * (a tracked Zoho item a CRM sells) is opened once: GET items/{id}. Re-read once a week (setting
+ * zoho.regimen_refresh_days, default 7): about 40 calls a week. Oldest first; what the run's time does not reach is
+ * read next time.
+ */
+async function zohoRegimen(panel: Db, z: ZohoClient, now: Date): Promise<JobOutput> {
+  await panel.exec("alter table products add column if not exists regimen_raw text");
+  await panel.exec("alter table products add column if not exists regimen_checked_at timestamptz");
+  const days = await setting(panel, "zoho.regimen_refresh_days", 7);
+  const label = (await settingText(panel, "zoho.segment_field", "Type Regimen")).toLowerCase();
+  const key = "cf_" + label.replace(/^cf_/, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  const due = await panel.query<{ zoho_item_id: string; name: string }>(
+    `select p.zoho_item_id, p.name from products p
+     where p.in_zoho and p.active and p.track_inventory
+       and exists (select 1 from crm_products c where c.zoho_item_id = p.zoho_item_id)
+       and (p.regimen_checked_at is null or p.regimen_checked_at < $1::timestamptz)
+     order by p.regimen_checked_at asc nulls first, p.name
+     limit 80`,
+    [new Date(now.getTime() - days * 86_400_000).toISOString()],
+  );
+  const counts: Record<string, number> = {};
+  let read = 0;
+  let stop: string | undefined;
+  for (const d of due) {
+    let r;
+    try {
+      r = await z.get<{ item?: { custom_field_hash?: Record<string, unknown>; custom_fields?: { label?: string; api_name?: string; value?: unknown }[] } }>(`items/${d.zoho_item_id}`);
+    } catch (e) {
+      if (e instanceof ZohoBudgetExceeded || e instanceof ZohoRateLimited) {
+        stop = e.message;
+        break;
+      }
+      throw e;
+    }
+    if (!r.ok) throw new Error(`Zoho item ${d.name}: ${r.message}`);
+    const item = r.data.item ?? {};
+    const field = (item.custom_fields ?? []).find((f) => f.api_name === key || (f.label ?? "").toLowerCase() === label);
+    const raw = String(item.custom_field_hash?.[key] ?? field?.value ?? "").trim();
+    const seg = parseSegment(raw);
+    counts[seg ?? "not set"] = (counts[seg ?? "not set"] ?? 0) + 1;
+    await panel.query("update products set regimen_raw = $2, segment = $3, regimen_checked_at = $4::timestamptz, updated_at = now() where zoho_item_id = $1", [
+      d.zoho_item_id,
+      raw || null,
+      seg,
+      now.toISOString(),
+    ]);
+    read++;
+  }
+  const left = due.length - read;
+  const split = Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(", ");
+  const note = due.length
+    ? `${read} product${read === 1 ? "" : "s"} read${split ? ` (${split})` : ""}${left ? `; ${left} left for the next run (${stop})` : ""}`
+    : `every product read in the last ${days} days`;
+  return { rows: read, note, stop };
 }
 
 async function zohoAccess(panel: Db, z: ZohoClient): Promise<JobOutput> {
@@ -414,6 +481,7 @@ async function runJobs(jobs: JobName[], deps: SyncDeps): Promise<JobResult[]> {
         job === "zoho_catalog" ? await zohoCatalog(deps.panel, zoho!)
         : job === "zoho_stock" ? await zohoStock(deps.panel, zoho!, now, deps.stockSince)
         : job === "zoho_access" ? await zohoAccess(deps.panel, zoho!)
+        : job === "zoho_regimen" ? await zohoRegimen(deps.panel, zoho!, now)
         : job === "crm_reference" ? await crmReference(deps.panel, deps.crm!)
         : job === "crm_flows" ? await crmFlows(deps.panel, deps.crm!, now)
         : await crmHealth(deps.panel, deps.crm!, now);

@@ -181,8 +181,8 @@ const DRIVERS: Driver[] = admin ? [PGLITE, POSTGRES_JS] : [PGLITE];
 const CFG: ZohoConfig = { apiBase: "https://zoho.test", accountsBase: "https://accounts.test", orgId: "ORG1", clientId: "c", clientSecret: "s", refreshToken: "r" };
 
 const ITEMS = [
-  // the Type Regimen custom field (20 Nov 2026) arrives as cf_type_regimen; the cream has none, so its category is read
-  { item_id: "I-SERUM", name: "Hair Serum", sku: "HS-01", rate: 999, purchase_rate: 300, vendor_name: "Acme Labs", category_name: "Hair", status: "active", track_inventory: true, cf_type_regimen: "Night Regimen" },
+  // as in the real Zoho (20 Nov 2026), the item LIST leaves out the Type Regimen field: zoho_regimen opens each item
+  { item_id: "I-SERUM", name: "Hair Serum", sku: "HS-01", rate: 999, purchase_rate: 300, vendor_name: "Acme Labs", category_name: "Hair", status: "active", track_inventory: true },
   { item_id: "I-CREAM", name: "Day Cream", sku: "DC-01", rate: 799, purchase_rate: 10, status: "active", track_inventory: true },
   { item_id: "I-PLAN", name: "Skin Plan", sku: "SP-1M", rate: 4999, status: "active", track_inventory: false },
   { item_id: "I-COMBO", name: "Amazon Combo", sku: "AC-1", rate: 1499, status: "active", track_inventory: true },
@@ -227,6 +227,10 @@ function fakeZoho(opts: { rateLimitAt?: number } = {}) {
     if (p === "items" && !loc) return json({ code: 0, items: page === 1 ? ITEMS.slice(0, 3) : ITEMS.slice(3), page_context: { has_more_page: page === 1 } });
     if (p === "items" && loc === "Z-MUM") return json({ code: 400040, message: "You do not have permission to access this location" }, 400);
     if (p === "items" && loc) return json({ code: 0, items: ITEMS.map((i) => ({ ...i, stock_on_hand: STOCK[loc]?.[i.item_id] ?? 0 })), page_context: { has_more_page: false } });
+    // one item's own record carries its custom fields (Type Regimen): the serum has two values, the cream none
+    if (p === "items/I-SERUM")
+      return json({ code: 0, item: { item_id: "I-SERUM", custom_field_hash: { cf_type_regimen: "Day regimen, Night regimen" }, custom_fields: [{ label: "Type Regimen", api_name: "cf_type_regimen", value: "Day regimen, Night regimen" }] } });
+    if (p.startsWith("items/")) return json({ code: 0, item: { item_id: p.slice(6), custom_field_hash: {}, custom_fields: [] } });
     if (p === "salesorders" || p === "invoices" || p === "transferorders") return json({ code: 57, message: "You are not authorized to perform this operation" }, 401);
     if (p === "purchaseorders") return json({ code: 0, purchaseorders: [{ purchaseorder_id: "PO-1", status: "open" }], page_context: { has_more_page: false } });
     if (p === "purchaseorders/PO-1")
@@ -283,7 +287,7 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     for (const r of results) expect(r, r.job).toMatchObject({ ok: true });
     expect(z.mints()).toBe(1); // one token for the whole run
     // a full run: 1 location list + 2 item pages + 3 locations + 4 access checks + PO list + 1 PO
-    expect(z.calls.length).toBe(12);
+    expect(z.calls.length).toBe(14); // + 2: zoho_regimen opens each planned product once (serum, cream)
     expect(byJob(results, "zoho_stock").note).toContain("refused: Mumbai");
 
     const ds = await buildDataset(panel, NOW);
@@ -309,8 +313,10 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     expect(serum).toMatchObject({ name: "Hair Serum", price: 999, cost: 300, category: "Hair", packSize: 1, launchedOn: "2026-07-09" });
     expect(cream).toMatchObject({ price: 850, cost: 255, launchedOn: "2026-11-03" }); // ₹10 purchase price is a placeholder → 30% of price
     expect(cream.category).toBe("Creams & Moisturizers"); // Zoho has no category for it: the online CRM's
-    expect([serum.segment, serum.costEstimated]).toEqual(["night", false]); // from Zoho's Type Regimen field
-    expect([cream.segment, cream.costEstimated]).toEqual([null, true]); // no field value, and "Creams" names no segment
+    // from each item's own Type Regimen (the list does not carry it): "Day regimen, Night regimen" → Night, the
+    // longer day limit; the cream's field is empty → not set (its CRM category is no longer guessed from)
+    expect([serum.segment, serum.regimenRaw, serum.costEstimated]).toEqual(["night", "Day regimen, Night regimen", false]);
+    expect([cream.segment, cream.regimenRaw, cream.costEstimated]).toEqual([null, null, true]);
     expect(ds.vendors.map((v) => v.name).sort()).toEqual(["Acme Labs", "Vendor not set in Zoho"]);
 
     expect(ds.stock["I-SERUM"]).toEqual({ "Z-MOH": 110, "Z-LDH": 40, "Z-MUM": null });
@@ -395,7 +401,7 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
       { name: "Ghost Product", reason: "Linked to a Zoho item that Zoho doesn’t have", unitsSold90d: 0, lastSale: null },
     ]);
     expect(h.zohoOnlyItems).toBe(1); // Amazon Combo (the retired item is inactive)
-    expect(h.lastSync).toHaveLength(7);
+    expect(h.lastSync).toHaveLength(8); // + the weekly Type Regimen read
     // every sync job ran; the reorder alerts run after the morning sync, so they have not run in this test
     expect(h.lastSync.filter((s) => s.job !== "Reorder alerts (email / WhatsApp)").every((s) => s.ok && s.at)).toBe(true);
     expect(h.lastSync.find((s) => s.job === "Reorder alerts (email / WhatsApp)")).toMatchObject({ at: null, note: "Has not run yet" });
@@ -438,7 +444,7 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     await panel.exec(`update settings set value = '3' where key = 'zoho.max_calls_per_minute'`);
     const { results, c } = await fullSync(panel, crm);
     expect(results.every((r) => r.ok)).toBe(true);
-    expect(c.waits.length).toBe(3); // 12 calls at 3 a minute: waited for 3 new minutes
+    expect(c.waits.length).toBe(4); // 14 calls at 3 a minute: waited for 4 new minutes
     const minutes = await panel.query<{ calls: number }>("select calls from zoho_calls");
     expect(Math.max(...minutes.map((r) => r.calls))).toBeLessThanOrEqual(3);
     await expect(buildDataset(panel, NOW)).resolves.toBeTruthy();
@@ -453,7 +459,7 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     expect(runLeftWork(first)).toBe(true);
     await panel.exec(`update settings set value = '600' where key = 'zoho.max_calls_per_day'`);
     // the catch-up (same day): the access check is still due, and stock only where the first run did not reach
-    expect(await restJobs(panel, NOW)).toEqual(["zoho_stock", "zoho_access"]);
+    expect(await restJobs(panel, NOW)).toEqual(["zoho_stock", "zoho_access", "zoho_regimen"]);
     const z = fakeZoho();
     const rest = await runSync(await restJobs(panel, NOW), { panel, crm, zohoCfg: CFG, fetchFn: z.fetchFn, now: NOW, clock: c.clock, sleep: c.sleep, stockSince: NOW });
     expect(z.calls.filter((x) => x.startsWith("items@"))).toEqual(["items@Z-LDH", "items@Z-MUM"]);
@@ -461,7 +467,7 @@ describe.each(DRIVERS)("sync → dataset on $name (fake Zoho, fake CRM, the real
     expect(runLeftWork(rest)).toBe(false);
     await expect(buildDataset(panel, NOW)).resolves.toBeTruthy();
     // a second catch-up has nothing left to read: no Zoho call at all, and the access check is not repeated
-    expect(await restJobs(panel, NOW)).toEqual(["zoho_stock"]);
+    expect(await restJobs(panel, NOW)).toEqual(["zoho_stock", "zoho_regimen"]);
     const z2 = fakeZoho();
     await runSync(["zoho_stock"], { panel, crm, zohoCfg: CFG, fetchFn: z2.fetchFn, now: NOW, clock: c.clock, sleep: c.sleep, stockSince: NOW });
     expect(z2.calls.filter((x) => x.startsWith("items@"))).toEqual([]);
