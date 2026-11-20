@@ -88,6 +88,21 @@ describe("campaigns and festivals feed Order now", () => {
   });
 });
 
+describe("the marketing and sales plans (decided 20 Nov 2026)", () => {
+  it("are for Marketing, the Sales head and Management only: Purchase and the Supply chain head do not see them", () => {
+    for (const id of ["marketing", "sales", "management"] as const) {
+      expect(canOpen("/plans", roleById(id).access, id)).toBe(true);
+      expect(canOpen("/plans/form", roleById(id).access, id)).toBe(true);
+      expect(inNav("/plans", id)).toBe(true);
+    }
+    for (const id of ["purchase", "supply"] as const) {
+      expect(canOpen("/plans", roleById(id).access, id)).toBe(false);
+      expect(canOpen("/plans/form", roleById(id).access, id)).toBe(false);
+      expect(inNav("/plans", id)).toBe(false);
+    }
+  });
+});
+
 describe("Purchase-only pages", () => {
   it("only Purchase opens Marketing impact or sees it in the menu", () => {
     for (const id of ["management", "marketing", "sales", "supply"] as const) {

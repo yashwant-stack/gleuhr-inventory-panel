@@ -14,7 +14,7 @@ import { diffDays, fmtDay, fmtRange } from "@/lib/dates";
 import { purchaseRule, SEGMENTS, type ChannelId, type FormulaSettings } from "@/lib/domain/types";
 import { fmtDays, fmtInt, fmtMoneyShort, fmtRate, pctChange } from "@/lib/format";
 import { CYCLES } from "@/lib/mock/plans";
-import { PLAN_PARTS, roleById } from "@/lib/roles";
+import { canOpen, PLAN_PARTS, roleById } from "@/lib/roles";
 import { usePanel } from "@/lib/state/store";
 
 type ActionTab = "all" | "critical" | "low" | "overstock";
@@ -221,7 +221,7 @@ export default function HomePage() {
               ))}
             </div>
           </Card>
-          {weekly ? (
+          {weekly && canOpen("/plans", role.access, role.id) ? (
             <Card>
               <CardHeader
                 title={`Weekly plan · ${weekly.label}`}

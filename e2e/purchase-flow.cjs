@@ -28,6 +28,7 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   await p.waitForTimeout(500);
   ok((await p.locator('main').innerText()).includes('Sales over time') && !(await p.locator('main').innerText()).includes('Total inventory value'), 'Management: Home keeps Sales over time, no inventory value card');
   ok(!(await nav()).includes('Marketing impact'), 'Management: no Marketing impact in the menu');
+  ok((await nav()).includes('Plans'), 'Management: Plans is in the menu (Management reopens a locked plan)');
 
   await role('Purchase');
   const home = await p.locator('main').innerText();
@@ -37,6 +38,7 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   ok(/order at 150 days left, back to 180 days/.test(home) && /order at 120 days left, back to 150 days/.test(home), 'each regimen shows its reorder rule');
   ok(/Mostly an estimate: none of the \d+ products has a real purchase price in Zoho, so they are valued/.test(home), 'says the cost is an estimate where Zoho has no purchase price');
   ok((await nav()).includes('Marketing impact'), 'Purchase: Marketing impact is in the menu');
+  ok(!(await nav()).includes('Plans') && !home.includes('Weekly plan'), 'Purchase: no Plans in the menu and no weekly plan card on Home');
   await p.locator('main').getByText('Total inventory value').first().scrollIntoViewIfNeeded();
   await p.screenshot({ path: OUT + '/purchase-home.png' });
 

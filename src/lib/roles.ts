@@ -20,8 +20,8 @@ export const ROLES: Role[] = [
   { id: "management", person: "Management", title: "MD and leadership · approves orders, changes settings", access: "admin" },
   { id: "marketing", person: "Marketing", title: "Marketing head · the marketing plan", access: "planner", planPart: "marketing" },
   { id: "sales", person: "Sales head", title: "The sales plan, clinic by clinic", access: "planner", planPart: "sales" },
-  { id: "purchase", person: "Purchase", title: "Purchase orders · sees every page, changes nothing", access: "viewer" },
-  { id: "supply", person: "Supply chain head", title: "Stock and transfers · sees every page, changes nothing", access: "viewer" },
+  { id: "purchase", person: "Purchase", title: "Purchase orders · stock, orders and reports; not the marketing and sales plans", access: "viewer" },
+  { id: "supply", person: "Supply chain head", title: "Stock and transfers · stock, orders and reports; not the marketing and sales plans", access: "viewer" },
 ];
 
 /** Roles saved in a browser before 19 Nov 2026, and the role each one is now. */
@@ -56,7 +56,7 @@ export const PAGE_ACCESS: Record<string, Access[]> = {
   "/projections": ["admin", "viewer", "planner"],
   "/stock": ["admin", "viewer", "planner"],
   "/indent": ["admin", "viewer"],
-  "/plans": ["admin", "viewer", "planner"],
+  "/plans": ["admin", "planner"],
   "/reports": ["admin", "viewer"],
   "/alerts": ["admin", "viewer"],
   "/settings": ["admin", "viewer"],
@@ -68,6 +68,9 @@ export const PAGE_ACCESS: Record<string, Access[]> = {
 /** Pages only some roles see at all (decided 20 Nov 2026: the Purchase-only additions). Other roles don't get the nav item. */
 export const PAGE_ROLES: Record<string, RoleId[]> = {
   "/marketing-impact": ["purchase"],
+  // the marketing and sales plans (decided 20 Nov 2026): Marketing and the Sales head, and Management, who reopens a
+  // locked plan. Purchase and the Supply chain head no longer see them.
+  "/plans": ["management", "marketing", "sales"],
 };
 
 export function canOpen(path: string, access: Access, roleId?: RoleId): boolean {
