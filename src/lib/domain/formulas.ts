@@ -173,10 +173,12 @@ export interface StatusInput {
  * Section C · Stock status rules.
  *  Critical  — days of cover < lead time: runs out before new stock can arrive
  *              (an open order that lands before the stock-out date means it can, so it is not critical).
- *  Low       — current stock + stock on the way (less campaign units) ≤ reorder point (150 days of sales): time to order.
+ *  Low       — current stock + stock on the way (less campaign units) ≤ reorder point: daily rate × the regimen's
+ *              trigger (Night Regime 150 days, Day Regime and Wellness 120, no regimen 150), or × the lead time when
+ *              that is longer. Time to order.
  *  Overstock — days of cover > overstock limit.
  *  Healthy   — everything else.
- *  No sales  — nothing sold in the rate windows (no rate to judge cover by).
+ *  No sales  — nothing used in the sales window (last 60 days), so there is no daily rate to judge cover by.
  */
 export function stockStatus(s: StatusInput): StockStatus {
   if (s.rate <= 0) return "no_sales";
