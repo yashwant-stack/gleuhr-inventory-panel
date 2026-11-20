@@ -34,7 +34,7 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   ok(home.includes('Total inventory value') && !home.includes('Sales over time'), 'Purchase: Home shows Total inventory value, Sales over time is gone');
   ok(/Mohali warehouse[\s\S]*Clinics \(\d+\)[\s\S]*Unused bottles/.test(home), 'value split: Mohali warehouse, clinics, unused bottles');
   ok(/Day Regime[\s\S]*Night Regime[\s\S]*Wellness \(edibles\)/.test(home), 'segment split: Day / Night / Wellness');
-  ok(home.includes('is an estimate'), 'says the cost is an estimate where Zoho has no purchase price');
+  ok(/Mostly an estimate: none of the \d+ products has a real purchase price in Zoho, so they are valued/.test(home), 'says the cost is an estimate where Zoho has no purchase price');
   ok((await nav()).includes('Marketing impact'), 'Purchase: Marketing impact is in the menu');
   await p.locator('main').getByText('Total inventory value').first().scrollIntoViewIfNeeded();
   await p.screenshot({ path: OUT + '/purchase-home.png' });

@@ -292,8 +292,12 @@ function InventoryValueCard({ inv, filtered, segmentFilter }: { inv: InventoryVa
             {inv.unreadable.length ? <p>Leaves out {inv.unreadable.join(", ")}: the Zoho login can’t read {inv.unreadable.length === 1 ? "it" : "them"} yet.</p> : null}
             {inv.estimated > 0 ? (
               <p>
-                {inv.estimated >= stockValue - 0.5 ? "All of the stock value" : `${fmtMoneyShort(inv.estimated)} of the ${fmtMoneyShort(stockValue)} stock value`} is an estimate: Zoho has no purchase price for{" "}
-                {inv.estimated >= stockValue - 0.5 ? "these products" : "some products"}, so they are valued at a share of the selling price.
+                {inv.estimated * 2 > stockValue ? "Mostly an estimate" : "Partly an estimate"}:{" "}
+                {inv.estimatedProducts === inv.products
+                  ? `none of the ${inv.products} products has a real purchase price in Zoho`
+                  : `${inv.estimatedProducts} of the ${inv.products} products ${inv.estimatedProducts === 1 ? "has" : "have"} no real purchase price in Zoho`}
+                , so {inv.estimatedProducts === 1 ? "it is" : "they are"} valued at a share of the selling price ({fmtMoneyShort(inv.estimated)} of the {fmtMoneyShort(stockValue)}). Enter purchase
+                prices in Zoho to make this exact.
               </p>
             ) : null}
           </div>

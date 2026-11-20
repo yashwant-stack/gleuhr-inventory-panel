@@ -601,8 +601,10 @@ export interface InventoryValue {
   bottles: number;
   /** Locations left out because Zoho cannot read them. */
   unreadable: string[];
-  /** Part of the stock value that uses an estimated cost. */
+  /** Part of the stock value that uses an estimated cost, and how many products that is (of how many). */
   estimated: number;
+  estimatedProducts: number;
+  products: number;
   units: number;
   bySegment: { segment: Segment | "none"; value: number; units: number; products: number }[];
 }
@@ -614,6 +616,7 @@ export function inventoryValue(ds: Dataset, products: Product[], bottleValue: nu
   for (const l of readable) counted[l.kind] += 1;
   const seg = new Map<Segment | "none", { value: number; units: number; products: number }>();
   let estimated = 0;
+  let estimatedProducts = 0;
   let units = 0;
   for (const p of products) {
     let pv = 0;
@@ -625,7 +628,10 @@ export function inventoryValue(ds: Dataset, products: Product[], bottleValue: nu
       pu += q;
     }
     units += pu;
-    if (p.costEstimated) estimated += pv;
+    if (p.costEstimated) {
+      estimated += pv;
+      estimatedProducts += 1;
+    }
     const key = p.segment ?? "none";
     const cur = seg.get(key) ?? { value: 0, units: 0, products: 0 };
     seg.set(key, { value: cur.value + pv, units: cur.units + pu, products: cur.products + 1 });
@@ -639,6 +645,8 @@ export function inventoryValue(ds: Dataset, products: Product[], bottleValue: nu
     bottles,
     unreadable: ds.locations.filter((l) => !l.readable).map((l) => l.name),
     estimated,
+    estimatedProducts,
+    products: products.length,
     units,
     bySegment: order.filter((k) => seg.has(k)).map((k) => ({ segment: k, ...seg.get(k)! })),
   };
