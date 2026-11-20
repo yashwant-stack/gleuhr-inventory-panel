@@ -46,6 +46,25 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   const table = await p.locator('main table').first().innerText();
   ok(table.includes('Hair Serum') && !table.includes('UV Armour Sunscreen'), 'the stock table keeps Night Regime products and drops a Day Regime one');
 
+  // bug (20 Nov 2026): after clicking a segment, going elsewhere and coming back, Home lost the other segments
+  // through the menu, as a person does (a page reload would hide the bug: it starts the filters afresh)
+  const menu = p.getByRole('navigation', { name: 'Main' }).first();
+  await menu.getByRole('link', { name: 'Auto indent' }).click(); await p.waitForTimeout(400);
+  await menu.getByRole('link', { name: 'Home' }).click(); await p.waitForTimeout(500);
+  const back = await p.locator('main').innerText();
+  ok(/Day Regime[\s\S]*Night Regime[\s\S]*Wellness \(edibles\)/.test(back), 'back on Home: all three segments are still in the split');
+  ok((await p.getByRole('button', { name: /Segment/ }).first().innerText()).includes('All'), 'back on Home: the segment link left no filter behind');
+
+  // a Segment filter picked by hand narrows the products, never the inventory split
+  await p.getByRole('button', { name: /^Segment/ }).first().click();
+  await p.getByRole('option', { name: 'Day Regime' }).click();
+  await p.keyboard.press('Escape');
+  await p.waitForTimeout(300);
+  const picked = await p.locator('main').innerText();
+  ok(/Day Regime[\s\S]*Night Regime[\s\S]*Wellness \(edibles\)/.test(picked) && picked.includes('shows every segment'), 'Segment filter on Home: the card still shows every segment and says so');
+  await p.getByRole('button', { name: /Clear filters/ }).click();
+  await p.waitForTimeout(200);
+
   const before = await serumOrder();
   ok(before.includes('900'), 'Auto indent before: Hair Serum 900');
 

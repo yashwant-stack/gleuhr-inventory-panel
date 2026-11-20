@@ -29,12 +29,15 @@ function StockHealth() {
   const openProduct = usePanel((s) => s.openProduct);
   const params = useSearchParams();
   const [statuses, setStatuses] = useState<StockStatus[]>(() => initialStatuses(params.get("status")));
-  // Purchase's Home links a segment here (?segment=day): start the Segment filter on it
+  // Purchase's Home links a segment here (?segment=day): the Segment filter is on while this page is open, and
+  // cleared when you leave it, so it never follows you back to Home (bug fixed 20 Nov 2026)
   const role = useRole();
   const setSegments = usePanel((s) => s.setSegments);
   const segParam = params.get("segment");
   useEffect(() => {
-    if (role.id === "purchase" && segParam) setSegments([segParam]);
+    if (role.id !== "purchase" || !segParam) return;
+    setSegments([segParam]);
+    return () => setSegments([]);
   }, [role.id, segParam, setSegments]);
   const [view, setView] = useState<"summary" | "locations">("summary");
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "urgency", dir: "asc" });

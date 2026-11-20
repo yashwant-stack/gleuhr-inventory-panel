@@ -41,7 +41,8 @@ export default function HomePage() {
   // Purchase's Home (decided 20 Nov 2026): the stock's value replaces the sales-over-time chart
   const points = useMemo(() => (purchase ? [] : dailyTotals(ds, f)), [ds, f, purchase]);
   const inv = useMemo(
-    () => (purchase ? inventoryValue(ds, ds.products.filter((p) => productMatches(p, f)), settings.unusedBottleValue ?? 0) : null),
+    // every segment, always: the card IS the split by segment, so the Segment filter does not narrow it
+    () => (purchase ? inventoryValue(ds, ds.products.filter((p) => productMatches(p, { ...f, segments: [] })), settings.unusedBottleValue ?? 0) : null),
     [ds, f, purchase, settings.unusedBottleValue],
   );
   const proj = useMemo(() => [7, 15, 30].map((h) => ({ h, v: projectionValueByChannel(ds, settings, h) })), [ds, settings]);
@@ -92,7 +93,7 @@ export default function HomePage() {
       </div>
 
       <div className="mt-3 grid gap-3 xl:grid-cols-3">
-        {inv ? <InventoryValueCard inv={inv} filtered={f.categories.length + (f.segments?.length ?? 0) + (f.search ? 1 : 0) > 0} /> : <Card className="xl:col-span-2">
+        {inv ? <InventoryValueCard inv={inv} filtered={f.categories.length + (f.search ? 1 : 0) > 0} segmentFilter={(f.segments?.length ?? 0) > 0} /> : <Card className="xl:col-span-2">
           <CardHeader
             title="Sales over time"
             sub={`${fmtRange(f.from, f.to)} · by channel`}
@@ -256,7 +257,7 @@ const SEGMENT_COLOR: Record<string, string> = { day: "var(--color-seg-day)", nig
 const segmentLabel = (k: string) => SEGMENTS.find((g) => g.id === k)?.label ?? "Not set in Zoho";
 
 /** Purchase's Home: the working capital in stock, where it sits and which segment it is in. */
-function InventoryValueCard({ inv, filtered }: { inv: InventoryValue; filtered: boolean }) {
+function InventoryValueCard({ inv, filtered, segmentFilter }: { inv: InventoryValue; filtered: boolean; segmentFilter: boolean }) {
   const stockValue = inv.total - inv.bottles;
   const share = (v: number) => (inv.total ? `${Math.round((v / inv.total) * 100)}%` : "–");
   const rows: { label: string; value: number | null; note?: string }[] = [
@@ -321,6 +322,7 @@ function InventoryValueCard({ inv, filtered }: { inv: InventoryValue; filtered: 
               </li>
             ))}
           </ul>
+          {segmentFilter ? <p className="mt-2 text-[11.5px] text-muted">The Segment filter narrows the product lists; this card always shows every segment.</p> : null}
           {inv.bySegment.some((g) => g.segment === "none") ? (
             <p className="mt-2 text-[11.5px] text-muted">“Not set in Zoho”: the item has no Segment field value in Zoho yet.</p>
           ) : null}
