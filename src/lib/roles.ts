@@ -61,13 +61,14 @@ export const PAGE_ACCESS: Record<string, Access[]> = {
   "/alerts": ["admin", "viewer"],
   "/settings": ["admin", "viewer"],
   "/health": ["admin", "viewer"],
-  "/marketing-impact": ["viewer"],
+  "/marketing-impact": ["viewer", "planner"],
   "/bottles": ["admin", "viewer"],
 };
 
 /** Pages only some roles see at all (decided 20 Nov 2026: the Purchase-only additions). Other roles don't get the nav item. */
 export const PAGE_ROLES: Record<string, RoleId[]> = {
-  "/marketing-impact": ["purchase"],
+  // campaigns and festivals (decided 21 Nov 2026): Purchase and Marketing
+  "/marketing-impact": ["purchase", "marketing"],
   // the marketing and sales plans (decided 20 Nov 2026): Marketing and the Sales head, and Management, who reopens a
   // locked plan. Purchase and the Supply chain head no longer see them.
   "/plans": ["management", "marketing", "sales"],

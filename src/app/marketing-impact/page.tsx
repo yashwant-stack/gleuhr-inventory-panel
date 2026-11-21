@@ -1,6 +1,6 @@
 "use client";
 
-// Marketing impact (Purchase only, decided 20 Nov 2026): campaigns and festival surges that raise demand. An event
+// Marketing impact (Purchase and Marketing, decided 20–21 Nov 2026): campaigns and festival surges that raise demand. An event
 // that is applied to planning adds its extra units to Order now on Auto indent, over the same window Order now uses
 // (today to lead time + cover days). The math lives in src/lib/data/campaigns.ts; this page only shows it.
 
@@ -79,7 +79,7 @@ export default function MarketingImpactPage() {
   const removeCampaign = usePanel((s) => s.removeCampaign);
   const saveFestival = usePanel((s) => s.saveFestival);
   const removeFestival = usePanel((s) => s.removeFestival);
-  const canEdit = role.id === "purchase";
+  const canEdit = role.id === "purchase" || role.id === "marketing";
   const [draft, setDraft] = useState<Campaign | null>(null);
   const [fest, setFest] = useState<Festival | null>(null);
 
@@ -162,7 +162,7 @@ export default function MarketingImpactPage() {
             title="Campaigns"
             sub="Extra units = the product’s usage per day in the targeted channels × the campaign’s days × the uplift %. The uplift is your estimate; ad spend does not turn into units by a formula."
             right={
-              <Button icon={<Plus size={14} />} disabled={!canEdit || !!draft} disabledReason={!canEdit ? "Only Purchase can add campaigns" : "Finish the campaign you are editing first"} onClick={() => setDraft(blankCampaign())}>
+              <Button icon={<Plus size={14} />} disabled={!canEdit || !!draft} disabledReason={!canEdit ? "Only Purchase and Marketing can add campaigns" : "Finish the campaign you are editing first"} onClick={() => setDraft(blankCampaign())}>
                 New campaign
               </Button>
             }
@@ -330,7 +330,7 @@ export default function MarketingImpactPage() {
             title="Festival calendar"
             sub="A festival raises the demand of every channel by its surge %, for its days. Applied festivals are added to Order now like campaigns."
             right={
-              <Button icon={<Plus size={14} />} disabled={!canEdit || !!fest} disabledReason={!canEdit ? "Only Purchase can add festivals" : "Finish the festival you are editing first"} onClick={() => setFest(blankFestival())}>
+              <Button icon={<Plus size={14} />} disabled={!canEdit || !!fest} disabledReason={!canEdit ? "Only Purchase and Marketing can add festivals" : "Finish the festival you are editing first"} onClick={() => setFest(blankFestival())}>
                 Add festival
               </Button>
             }

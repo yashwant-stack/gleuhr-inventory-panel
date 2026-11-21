@@ -12,6 +12,7 @@ import { Button, Card, CardHeader, Delta, Note, PageHeader, StatusChip } from "@
 import { urgency, type ProductMetrics } from "@/lib/data/engine";
 import { useDataset, useMetrics, useRole, useSubmissions } from "@/lib/data/hooks";
 import {
+  canStillSubmit,
   clinicSplit,
   cycleById,
   cycleState,
@@ -177,7 +178,8 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
   const owner = roleById(meta.owner);
   const isOwner = role.planPart === part;
   const locked = !!existing?.locked;
-  const canSubmit = isOwner && state === "open" && !locked;
+  // from the request day until the period starts; after the due day it is late, but still accepted
+  const canSubmit = isOwner && canStillSubmit(cycle, ds.today) && !locked;
   const reason = locked
     ? `Submitted and locked on ${fmtDay(existing!.submittedAt.slice(0, 10))}${existing?.consent ? ", after confirming the stock warnings and the MD’s approval" : ""}. It can’t be edited. Management can reopen it if a change is needed.`
     : !isOwner

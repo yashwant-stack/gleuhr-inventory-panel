@@ -16,7 +16,7 @@ const G: Record<string, string> = {
   "nav:data health": "Can you trust the numbers? What reaches the panel, what doesn't, and why. The number counts open issues.",
   "nav:settings": "Thresholds and formulas the whole panel uses.",
   "nav:bottles": "Bottles, caps and pumps at the Mohali warehouse from Zoho, and how long each lasts.",
-  "nav:marketing impact": "Campaigns and festival surges, and the extra units they add to Order now (Purchase only).",
+  "nav:marketing impact": "Campaigns and festival surges, and the extra units they add to Order now (Purchase and Marketing).",
 
   // ── filters ──
   "filter:channel": "Show only some sales channels: clinics, online team, website, Amazon, Flipkart.",

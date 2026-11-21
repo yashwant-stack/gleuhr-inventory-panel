@@ -104,12 +104,14 @@ describe("the marketing and sales plans (decided 20 Nov 2026)", () => {
 });
 
 describe("Purchase-only pages", () => {
-  it("only Purchase opens Marketing impact or sees it in the menu", () => {
-    for (const id of ["management", "marketing", "sales", "supply"] as const) {
+  it("Marketing impact is for Purchase and Marketing (21 Nov 2026); the others do not see it", () => {
+    for (const id of ["management", "sales", "supply"] as const) {
       expect(canOpen("/marketing-impact", roleById(id).access, id)).toBe(false);
       expect(inNav("/marketing-impact", id)).toBe(false);
     }
-    expect(canOpen("/marketing-impact", roleById("purchase").access, "purchase")).toBe(true);
-    expect(inNav("/marketing-impact", "purchase")).toBe(true);
+    for (const id of ["purchase", "marketing"] as const) {
+      expect(canOpen("/marketing-impact", roleById(id).access, id)).toBe(true);
+      expect(inNav("/marketing-impact", id)).toBe(true);
+    }
   });
 });

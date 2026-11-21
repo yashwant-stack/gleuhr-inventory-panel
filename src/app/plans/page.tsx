@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { SubmissionChip } from "@/components/plan-ui";
 import { Card, CardHeader, Delta, Note, PageHeader } from "@/components/ui";
 import { cycleSubmissions, useDataset, useRole, useSubmissions } from "@/lib/data/hooks";
-import { actualsForPeriod, cycleState, periodDays, submissionStatus } from "@/lib/data/plans";
+import { actualsForPeriod, canStillSubmit, cycleState, periodDays, submissionStatus } from "@/lib/data/plans";
 import { fmtDay, fmtRange } from "@/lib/dates";
 import { gapPct } from "@/lib/domain/formulas";
 import { fmtInt, fmtPct, ordinal } from "@/lib/format";
@@ -29,7 +29,7 @@ export default function PlansPage() {
   const subs = cycleSubmissions(all, cycle.id);
   const state = cycleState(cycle, ds.today);
 
-  const myOpen = role.planPart ? CYCLES.filter((c) => cycleState(c, ds.today) !== "closed") : [];
+  const myOpen = role.planPart ? CYCLES.filter((c) => cycleState(c, ds.today) !== "closed" || canStillSubmit(c, ds.today)) : [];
 
   return (
     <div>
@@ -149,8 +149,8 @@ export default function PlansPage() {
                     <td className="num">{system !== null ? fmtInt(system) : "—"}</td>
                     <td className="num">{g !== null ? <span className={Math.abs(g) > gapFlag ? "font-semibold text-st-low" : ""}>{fmtPct(g, true)}</span> : "—"}</td>
                     <td className="text-right">
-                      <Link href={`/plans/form?cycle=${cycle.id}&part=${p.id}`} className={clsx("rounded-lg px-2.5 py-1 text-[12.5px] font-medium whitespace-nowrap", mine && state === "open" ? "bg-coral text-white" : "border border-line-strong hover:bg-sunken")}>
-                        {mine && state === "open" ? (s ? (s.locked ? "View (locked)" : "Edit my plan") : "Fill my plan") : s ? "View" : "Preview form"}
+                      <Link href={`/plans/form?cycle=${cycle.id}&part=${p.id}`} className={clsx("rounded-lg px-2.5 py-1 text-[12.5px] font-medium whitespace-nowrap", mine && canStillSubmit(cycle, ds.today) ? "bg-coral text-white" : "border border-line-strong hover:bg-sunken")}>
+                        {mine && canStillSubmit(cycle, ds.today) ? (s ? (s.locked ? "View (locked)" : "Edit my plan") : "Fill my plan") : s ? "View" : "Preview form"}
                       </Link>
                     </td>
                   </tr>

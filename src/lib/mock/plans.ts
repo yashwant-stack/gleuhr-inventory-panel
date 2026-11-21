@@ -18,12 +18,54 @@ export interface PlanCycle {
   reportOn: string;
 }
 
-export const CYCLES: PlanCycle[] = [
-  { id: "m-2026-12", kind: "monthly", label: "December 2026", periodFrom: "2026-12-01", periodTo: "2026-12-31", requestOn: "2026-11-23", dueOn: "2026-11-25", reportOn: "2026-11-26" },
-  { id: "w-2026-11-16", kind: "weekly", label: "Week of 16 Nov", periodFrom: "2026-11-16", periodTo: "2026-11-22", requestOn: "2026-11-12", dueOn: "2026-11-14", reportOn: "2026-11-16" },
-  { id: "w-2026-11-09", kind: "weekly", label: "Week of 9 Nov", periodFrom: "2026-11-09", periodTo: "2026-11-15", requestOn: "2026-11-05", dueOn: "2026-11-07", reportOn: "2026-11-09" },
-  { id: "m-2026-11", kind: "monthly", label: "November 2026", periodFrom: "2026-11-01", periodTo: "2026-11-30", requestOn: "2026-10-23", dueOn: "2026-10-25", reportOn: "2026-10-26" },
-];
+/**
+ * The plan cycles around a day, by the rule above (decided 20 Nov 2026: they follow the calendar, so live data always
+ * has the current cycles; the fixed sample list it replaced ran out after 14 Nov and left nothing open):
+ *  - weekly: the two latest weeks whose request day (Thursday) has come; a week runs Monday to Sunday,
+ *    due the Saturday before, report on its Monday;
+ *  - monthly: this month and next month; request the 23rd of the month before, due the 25th, report the 26th.
+ */
+export function cyclesFor(today: string): PlanCycle[] {
+  const day = (iso: string) => new Date(`${iso}T00:00:00Z`);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const add = (s: string, n: number) => iso(new Date(day(s).getTime() + n * 86_400_000));
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  // the latest Monday whose Thursday-before has come: Monday ≤ today + 4
+  const limit = day(add(today, 4));
+  const latestMonday = add(iso(limit), -((limit.getUTCDay() + 6) % 7));
+  const weekly = [0, -7].map((back) => {
+    const from = add(latestMonday, back);
+    const d = day(from);
+    return { id: `w-${from}`, kind: "weekly" as const, label: `Week of ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`, periodFrom: from, periodTo: add(from, 6), requestOn: add(from, -4), dueOn: add(from, -2), reportOn: from };
+  });
+  const t = day(today);
+  const monthly = [0, 1].map((ahead) => {
+    const first = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + ahead, 1));
+    const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0));
+    const before = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() - 1, 23));
+    const ym = iso(first).slice(0, 7);
+    return {
+      id: `m-${ym}`,
+      kind: "monthly" as const,
+      label: `${LONG[first.getUTCMonth()]} ${first.getUTCFullYear()}`,
+      periodFrom: iso(first),
+      periodTo: iso(last),
+      requestOn: iso(before),
+      dueOn: add(iso(before), 2),
+      reportOn: add(iso(before), 3),
+    };
+  });
+  return [monthly[1]!, ...weekly, monthly[0]!];
+}
+
+/** The current cycles. Built for the sample day; the data's own day replaces it as soon as it loads (setCyclesToday). */
+export const CYCLES: PlanCycle[] = cyclesFor("2026-11-14");
+
+/** Called when the data loads: every screen reads this one list. */
+export function setCyclesToday(today: string): void {
+  CYCLES.splice(0, CYCLES.length, ...cyclesFor(today));
+}
 
 export interface SeedSubmission {
   cycleId: string;

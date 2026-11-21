@@ -95,6 +95,14 @@ export function periodDays(c: PlanCycle): number {
 
 export type CycleState = "upcoming" | "open" | "closed";
 
+/**
+ * Can the planner still fill or edit this plan? From the request day until the plan's period starts (decided 21 Nov
+ * 2026): after the due day it is still accepted, and counts as late.
+ */
+export function canStillSubmit(c: PlanCycle, today: string): boolean {
+  return today >= c.requestOn && today < c.periodFrom;
+}
+
 export function cycleState(c: PlanCycle, today: string): CycleState {
   if (today < c.requestOn) return "upcoming";
   if (today <= c.dueOn) return "open";

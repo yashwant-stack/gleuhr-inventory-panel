@@ -12,6 +12,7 @@ import type { PlanSubmission } from "../data/plans";
 import { TODAY } from "../mock/dataset";
 import { LEGACY_ROLES, ROLES, type PlanPart, type RoleId } from "../roles";
 import type { Campaign, Festival } from "../data/campaigns";
+import { setCyclesToday } from "../mock/plans";
 
 export type DatePreset = "today" | "7d" | "15d" | "30d" | "60d" | "90d" | "mtd" | "last_month" | "custom";
 
@@ -30,6 +31,7 @@ export const DATE_PRESETS: { id: Exclude<DatePreset, "custom">; label: string }[
 let panelToday = TODAY;
 export function setPanelToday(day: string): void {
   panelToday = day;
+  setCyclesToday(day); // the plan cycles follow the data's day
 }
 
 export function presetRange(p: Exclude<DatePreset, "custom">, today = panelToday): { from: string; to: string } {

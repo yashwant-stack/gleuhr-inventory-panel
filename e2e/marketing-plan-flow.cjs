@@ -104,6 +104,12 @@ const OUT = process.env.SHOTS_DIR || require('os').tmpdir();
   await p.getByRole('button', { name: /^Clinics by product/ }).click();
   ok((await p.locator('#products-clinic').getByRole('button', { name: /^Change for .* \(Clinics\)/ }).first().getAttribute('title')) === null, 'after Management reopens it, Marketing can edit again');
 
+  // Marketing also has the campaigns page (Marketing impact, 21 Nov 2026) and can add a campaign there
+  const menu = p.getByRole('navigation', { name: 'Main' }).first();
+  ok((await menu.innerText()).includes('Marketing impact'), 'Marketing: Marketing impact is in the menu');
+  await menu.getByRole('link', { name: 'Marketing impact' }).click(); await p.waitForTimeout(400);
+  ok(!(await p.getByRole('button', { name: 'New campaign' }).isDisabled()), 'Marketing: can add a campaign');
+
   ok(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await b.close();
 })().catch((e) => { console.error('SCRIPT ERROR', e.message); process.exit(1); });

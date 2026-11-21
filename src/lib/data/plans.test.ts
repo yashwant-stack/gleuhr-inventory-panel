@@ -4,7 +4,8 @@ import { getDataset } from "../mock/dataset";
 import { addDays } from "../dates";
 import type { PlanCycle } from "../mock/plans";
 import { computeMetrics, type ProductMetrics } from "./engine";
-import { clinicSplit, consolidate, cycleById, planBaseline, planStockCheck, spreadPlan, type PlanSubmission } from "./plans";
+import { canStillSubmit, clinicSplit, consolidate, cycleById, cycleState, planBaseline, planStockCheck, spreadPlan, type PlanSubmission } from "./plans";
+import { cyclesFor } from "../mock/plans";
 
 const ds = getDataset();
 const metrics = computeMetrics(ds, S);
@@ -112,5 +113,27 @@ describe("the plan's stock check: days left and when new stock arrives", () => {
   it("overstock the plan does not push is flagged; a product with no sales and no plan is left out", () => {
     const rows = planStockCheck(ds, [fake({ id: "D", stock: 5000, status: "overstock" }), fake({ id: "E", rate: 0 })], week, { D: { system: 70, planned: 70, budget: 0 } });
     expect(rows.map((r) => [r.product.id, r.risk])).toEqual([["D", "overstock"]]);
+  });
+});
+
+describe("plan cycles follow the calendar (21 Nov 2026: the fixed sample list ran out after 14 Nov)", () => {
+  const ids = (d: string) => cyclesFor(d).map((c) => c.id);
+  it("on the sample day they are exactly the sample cycles", () => {
+    expect(ids("2026-11-14")).toEqual(["m-2026-12", "w-2026-11-16", "w-2026-11-09", "m-2026-11"]);
+  });
+  it("on Saturday 21 Nov the weekly plan for the week of 23 Nov is open (request Thu 19, due Sat 21)", () => {
+    const w = cyclesFor("2026-11-21").find((c) => c.id === "w-2026-11-23")!;
+    expect(w).toMatchObject({ label: "Week of 23 Nov", requestOn: "2026-11-19", dueOn: "2026-11-21", periodFrom: "2026-11-23", periodTo: "2026-11-29" });
+    expect(cycleState(w, "2026-11-21")).toBe("open");
+  });
+  it("December's monthly plan: request 23 Nov, due 25 Nov, report 26 Nov", () => {
+    expect(cyclesFor("2026-11-21").find((c) => c.id === "m-2026-12")).toMatchObject({ label: "December 2026", requestOn: "2026-11-23", dueOn: "2026-11-25", reportOn: "2026-11-26", periodTo: "2026-12-31" });
+  });
+  it("a plan can still be filled after its due day (late) until its period starts, not before the request day", () => {
+    const w = cyclesFor("2026-11-21").find((c) => c.id === "w-2026-11-23")!;
+    expect(canStillSubmit(w, "2026-11-18")).toBe(false); // before Thursday's request
+    expect(canStillSubmit(w, "2026-11-21")).toBe(true); // due day
+    expect(canStillSubmit(w, "2026-11-22")).toBe(true); // Sunday: late, still accepted
+    expect(canStillSubmit(w, "2026-11-23")).toBe(false); // the week has started
   });
 });
