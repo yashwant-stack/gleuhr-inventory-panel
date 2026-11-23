@@ -52,6 +52,9 @@ const NAV = [
   { href: "/settings", label: "Settings", Icon: Settings },
 ];
 
+/** "Sync from Zoho now" is hidden for now (21–23 Nov 2026); the 9:00 AM daily sync still runs. Set true to show it. */
+const SHOW_SYNC_BUTTON = false;
+
 const SYNC_FMT = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 
 const noopSubscribe = () => () => {};
@@ -168,7 +171,7 @@ function DataBadge() {
         {IS_SNAPSHOT ? "Live data · snapshot" : "Live"}
       </span>
       <span className="hidden text-[12px] text-muted sm:inline">Synced {at}</span>
-      {IS_SNAPSHOT ? null : <SyncButton />}
+      {SHOW_SYNC_BUTTON && !IS_SNAPSHOT ? <SyncButton /> : null}
     </>
   );
 }
