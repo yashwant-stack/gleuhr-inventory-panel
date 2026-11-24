@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { SubmissionChip } from "@/components/plan-ui";
+import { IS_SNAPSHOT } from "@/lib/platform";
 import { Select } from "@/components/Select";
 import { toast } from "@/components/Toast";
 import { Button, Card, CardHeader, Delta, Note, PageHeader, StatusChip } from "@/components/ui";
@@ -256,7 +257,30 @@ function PlanForm({ cycleId, part }: { cycleId: string; part: PlanPart }) {
         ? { locked: true, consent: { at: submittedAt, by: role.id, atRisk: atRisk.map((r) => r.product.name), overstock: overNotPushed.map((r) => r.product.name), mdApproved: true as const } }
         : {}),
     });
-    toast(`${meta.label} for ${cycle.label} submitted${lock ? " and locked" : ""}. Saved in this browser only; the email to Management goes out once email is connected.`);
+    // email Management, cc the Marketing head and the Sales head (live data only; the server sends it by SMTP)
+    const version = (existing?.version ?? 0) + 1;
+    if (ds.origin === "live" && !IS_SNAPSHOT) {
+      fetch("/api/plans/submitted", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          cycleId: cycle.id,
+          periodFrom: cycle.periodFrom,
+          part,
+          version,
+          expected: lines.reduce((a, l) => a + (Number.isFinite(l.plannedUnits) ? l.plannedUnits : 0), 0),
+          system: lines.reduce((a, l) => a + l.systemUnits, 0),
+          budget: lines.reduce((a, l) => a + (l.budget || 0), 0),
+          note: draft.note,
+        }),
+      })
+        .then(async (r) => {
+          const b = (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+          toast(b.ok ? "Email sent to Management, with the Marketing head and the Sales head in copy." : `The email was not sent: ${b.error ?? r.status}`);
+        })
+        .catch(() => toast("The email was not sent: the server could not be reached."));
+    }
+    toast(`${meta.label} for ${cycle.label} submitted${lock ? " and locked" : ""}. Saved in this browser.`);
     router.push("/plans");
   };
   const submit = () => (needsConsent ? setConsentOpen(true) : save(false));
